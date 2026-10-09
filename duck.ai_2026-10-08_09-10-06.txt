@@ -1,0 +1,1541 @@
+﻿此对话由 Duck.ai (https://duck.ai) 使用 OpenAI 的 GPT-6 Luna 模型生成。人工智能聊天可能会显示不准确或令人反感的信息（详情请参阅https://duckduckgo.com/duckai/privacy-terms）。
+
+====================
+
+第 1 则用户提示（共 18 则） - 2026/10/8 03:31:37:
+我在 Xubuntu 24.04 Live 的虚拟机中手动使用 Curtin。先只读审查；完整配置审阅并由我明确确认之前，不要给写盘、分区、格式化或安装命令。不要索要或接收任何 LUKS 密码或密钥。
+
+目标盘要由生成器在 VM 内枚举并让我选择、二次确认；不要自动挑最大盘，也不需要我在聊天里先选定。GPT/UEFI；EFI FAT32 1 GiB 挂载 /boot/efi，未加密 ext4 /boot 2 GiB，LUKS root 45 GiB，独立 LUKS home 大小由我运行时自定义；home 之外的空间保持未分配；不配 swap。
+
+安装时，keyfile 暂存在另一块已解锁并挂载的加密磁盘上；安装后的系统启动时仍要人工输入口令解锁。Curtin 的 keyfile 内容会作为 LUKS 密钥材料；需核对生成的 crypttab 确实启动时提示口令。不要把 keyfile 内容放进聊天。
+
+已生成一版只读配置生成器草案：枚举磁盘、要求选盘并确认，询问 home 大小，检查两个 keyfile 路径可读，然后只向终端打印 YAML；不调用 Curtin、不写盘、不安装。生成器无法自行证明 keyfile 所在介质确实是另一块加密盘，需本地确认。草案还需审查 Curtin 对分区尺寸、EFI 标记及 crypttab 的实际处理；root/home 使用同一个还是不同的密钥也需确认。
+
+GPT-6 Luna:
+可以按你的边界先做**只读审查**：你还没有贴出生成器源码或实际 YAML，所以目前只能审查设计要求与 Curtin 行为，不能确认草案实现本身是否正确。**现在不要运行 Curtin，也不要执行任何会改动目标盘的步骤。**
+
+需要重点核对的地方：
+
+- **尺寸与未分配空间：** Curtin 的 `partition` 动作按配置顺序创建分区；v1 配置会把分区视为连续排列。只定义 EFI、`/boot`、root 和运行时指定大小的 home 分区，不定义“占满剩余空间”的分区，才符合保留剩余空间不分配的意图。应确认生成的尺寸单位和总和：1 GiB + 2 GiB + 45 GiB + 自定义 home 大小，另加 GPT/对齐开销；目标盘容量必须足够。Curtin 文档示例接受 `8GB` 这类尺寸，但草案具体写法仍需审查。[1]
+
+- **EFI 分区标记：** Curtin 文档说明，在 GPT 上 `flag: boot` 会设置 EFI 系统分区类型；因此 EFI 分区应采用该标记并格式化为 FAT32，挂载到 `/boot/efi`。还需确认 Live 环境确实以 UEFI 模式启动，否则 GRUB 的安装路径可能与目标不符。[1]
+
+- **LUKS 与启动时提示：** Curtin `dm_crypt` 的 `keyfile` 必须在运行 Curtin 时存在；该字段表示文件内容是密钥材料。文档称目标系统启动时会提示输入口令，但不能仅凭这句描述保证最终生成的 `crypttab` 在你的安装环境中确实采用人工口令提示。必须检查生成的 root、home 两条 `crypttab` 项：第三字段应为 `none`（或相应环境认可的无密钥文件设置），不能指向安装时的 keyfile；还要检查 initramfs/启动配置没有把 keyfile 内容带入目标系统。实际生成结果和启动测试之前，这一点应视为**未证实**。[1]
+
+- **keyfile 来源与密钥关系：** 生成器只检查两个路径可读，并不能证明它们来自另一块已解锁、已挂载的加密磁盘；这需要你在本地人工确认。还需明确 root 与 home 是使用**同一份**还是**不同的** keyfile 内容。无论选择哪种，都不要把内容粘贴到聊天，也不要让生成器输出或记录内容。Curtin 的 `keyfile` 取文件内容作为 LUKS 密钥材料，而不是把文件路径当成口令。[1]
+
+在查看草案前，我不会提供写盘、分区、格式化或安装命令。你可以贴出**生成器源码**和一份**删去敏感路径、设备序列号及任何密钥内容的示例 YAML**；我可以逐项检查选盘确认流程、home 尺寸输入校验、输出行为，以及 `crypttab` 相关配置。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+
+--------------------
+
+第 2 则用户提示（共 18 则） - 2026/10/8 03:33:57:
+刚才生成的python代码，我要怎么测试
+
+GPT-6 Luna:
+先在**不运行安装器、不写入磁盘**的前提下测试。由于这段 Python 代码没有出现在当前对话里，我不能确认它具体会执行什么；如果你把代码贴出来（删掉真实密钥内容和敏感路径），我可以逐行给你一套针对它的测试方法。
+
+对这类生成器，建议分层测试：
+
+1. **先静态检查**：确认代码只枚举设备、收集输入、检查文件可读性并打印 YAML；没有调用 Curtin、`mkfs`、`cryptsetup`、`parted`、`sfdisk`、`wipefs` 等程序，也没有写入 `/dev`、配置文件或目标盘。特别留意 `subprocess`、`os.system`、`open(..., "w")` 等调用。
+2. **用假输入走流程**：在隔离的测试环境中运行代码；选盘、确认和 home 大小都使用虚构测试值。若它直接调用系统磁盘枚举命令，先检查代码是否能把枚举结果替换成测试数据；不要为了测试而接入真实目标盘。
+3. **检查拒绝条件**：分别测试取消选盘、输入不存在的盘号、拒绝二次确认、home 大小为空/非数字/零/负数/过大，以及两个 keyfile 路径不可读时，程序是否停止且不输出可用配置。
+4. **检查成功输出**：用仅供测试的空文件或虚构路径，检查 YAML 是否能解析；确认只打印到终端、不保存文件，并核对分区布局、尺寸、挂载点、EFI 标记、LUKS 设备映射和 `crypttab` 相关设置。不要把真实 keyfile 内容打印出来。
+5. **做副作用检查**：测试前后比较虚拟机磁盘和相关文件状态；但不要把“测试没看到变化”当成安全保证。也不要在真实目标盘上运行 Curtin 来验证配置。
+
+你此前要求**完整配置审阅并由你明确确认之前，不给写盘、分区、格式化或安装命令**，所以这里不提供这类命令。Curtin 文档和配置示例可用于审阅 YAML，但当前搜索结果不足以支持一个可靠的“安全 dry-run 验证”命令；不要把未确认的 dry-run 假设当作无写盘保障。[1]
+
+查看全文
+[1] Custom storage mounting - #4 by javier-fs - Users — https://discourse.maas.io/t/custom-storage-mounting/9031/4
+
+--------------------
+
+第 3 则用户提示（共 18 则） - 2026/10/8 03:34:58:
+如何运行.py代码
+
+GPT-6 Luna:
+在 Xubuntu 的终端里，可以这样运行 Python 文件：
+
+1. 进入 `.py` 文件所在目录：
+   ```bash
+   cd ~/文件所在目录
+   ```
+2. 用 Python 运行它：
+   ```bash
+   python3 文件名.py
+   ```
+
+这会执行脚本。**如果这是你前面提到的磁盘配置生成器，先不要直接运行**：它会枚举真实磁盘并询问你选择目标盘。先把代码贴出来（删去真实密钥内容和敏感路径），我可以检查它是否确实只读，再告诉你安全的测试方式。
+
+--------------------
+
+第 4 则用户提示（共 18 则） - 2026/10/8 03:36:09:
+storage:
+  config:
+    - id: selected-disk
+      type: disk
+      path: /dev/REPLACE_WITH_RUNTIME_SELECTION
+      ptable: gpt
+      wipe: superblock
+      grub_device: true
+
+    - id: efi-part
+      type: partition
+      device: selected-disk
+      number: 1
+      size: 1G
+      flag: boot
+      wipe: superblock
+
+    - id: boot-part
+      type: partition
+      device: selected-disk
+      number: 2
+      size: 2G
+      wipe: superblock
+
+    - id: root-part
+      type: partition
+      device: selected-disk
+      number: 3
+      size: 45G
+      wipe: superblock
+
+    - id: home-part
+      type: partition
+      device: selected-disk
+      number: 4
+      size: REPLACE_WITH_USER_SELECTED_HOME_SIZE
+      wipe: superblock
+
+    - id: efi-format
+      type: format
+      volume: efi-part
+      fstype: fat32
+      label: EFI
+
+    - id: boot-format
+      type: format
+      volume: boot-part
+      fstype: ext4
+      label: boot
+
+    - id: root-crypt
+      type: dm_crypt
+      volume: root-part
+      dm_name: cryptroot
+      keyfile: /REPLACE_WITH_MOUNT_PATH/root.key
+      options: [luks]
+
+    - id: root-format
+      type: format
+      volume: root-crypt
+      fstype: ext4
+      label: root
+
+    - id: home-crypt
+      type: dm_crypt
+      volume: home-part
+      dm_name: crypthome
+      keyfile: /REPLACE_WITH_MOUNT_PATH/home.key
+      options: [luks]
+
+    - id: home-format
+      type: format
+      volume: home-crypt
+      fstype: ext4
+      label: home
+
+    - id: root-mount
+      type: mount
+      device: root-format
+      path: /
+
+    - id: boot-mount
+      type: mount
+      device: boot-format
+      path: /boot
+
+    - id: efi-mount
+      type: mount
+      device: efi-format
+      path: /boot/efi
+
+    - id: home-mount
+      type: mount
+      device: home-format
+      path: /home
+
+
+GPT-6 Luna:
+<!-- **Analyzing user config request**
+
+It seems like the user is sharing a configuration and might be asking for advice on running a .py file. The pasted YAML looks like it needs a review, especially since there are mentions of possibly dangerous commands like wiping the superblock, which violates the initial instructions to avoid such actions. I need to clarify that YAML isn’t Python, and there could be significant issues involved. I should look for real-world documentation on this. -->
+这是 **Curtin 的 YAML 配置片段，不是 Python 代码**，不能用 `python3 文件名.py` 来运行。并且它目前包含 `wipe: superblock`，一旦交给 Curtin 执行，可能清除所选磁盘上的文件系统签名；按你之前的要求，**现在不要运行它，也不要把它交给 Curtin**。
+
+只读审查可确认几件事：
+
+- `keyfile` 的含义符合 Curtin 文档：Curtin 运行时从指定文件读取密钥材料；文档称安装后的系统会提示输入口令。不过你仍要求核对实际生成的 `crypttab`，这份 YAML 本身不能证明安装结果会按预期提示。启动时人工输入通常对应 `crypttab` 第三字段为 `none` 或 `-`；还要检查没有遗留指向 keyfile 的路径。[1,2]
+- 分区只声明了四个指定大小的分区，没有“使用剩余空间”的分区定义，设计上意图保留剩余空间未分配；但 `REPLACE_WITH_USER_SELECTED_HOME_SIZE` 仍是占位文本，不是可直接执行的尺寸。
+- 配置里没看到 `version` 字段。Curtin 文档说明支持 storage 配置版本 1 和 2，且版本 1 是建议使用的版本；正式审阅时应确认生成器输出的完整配置版本和尺寸格式。[1]
+- `grub_device: true` 放在磁盘动作上，符合常见配置示例的放置方式；EFI 分区的 `flag: boot`、`fat32` 格式及 `/boot/efi` 挂载也与目标相符，但仍需结合完整配置与 UEFI 启动环境核验。
+
+此外，这份片段还不能确认生成器的运行时选盘、二次确认、home 大小校验、keyfile 来源检查，以及最终 `crypttab` 内容。贴出生成器源码和它实际打印的完整 YAML（替换真实设备路径、挂载路径和敏感信息）后，我可以继续只读审查；不要贴 keyfile 内容。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+[2] crypttab(5) - Linux manual page — https://man7.org/linux/man-pages/man5/crypttab.5.html
+
+--------------------
+
+第 5 则用户提示（共 18 则） - 2026/10/8 03:36:55:
+#!/usr/bin/env python3
+"""Review-only Curtin YAML generator. Does not partition, format, or install."""
+
+import json
+import os
+import subprocess
+import sys
+
+GIB = 1024 ** 3
+MIB = 1024 ** 2
+
+def run_json_lsblk():
+    result = subprocess.run(
+        ["lsblk", "--json", "--bytes", "--nodeps",
+         "-o", "PATH,SIZE,MODEL,TRAN,TYPE,RO"],
+        check=True, text=True, capture_output=True
+    )
+    return json.loads(result.stdout).get("blockdevices", [])
+
+def find_readwrite_disks():
+    disks = []
+    for item in run_json_lsblk():
+        if item.get("type") != "disk":
+            continue
+        if str(item.get("ro", "0")) == "1":
+            continue
+        path = item.get("path")
+        size = item.get("size")
+        if path and isinstance(size, int):
+            disks.append(item)
+    return disks
+
+def show_keyfile_mount(path):
+    result = subprocess.run(
+        ["findmnt", "-n", "-o", "SOURCE,FSTYPE,TARGET", "-T", path],
+        check=True, text=True, capture_output=True
+    )
+    return result.stdout.strip()
+
+def yaml_quote(value):
+    # JSON double-quoted strings are valid YAML strings.
+    return json.dumps(str(value), ensure_ascii=False)
+
+def main():
+    disks = find_readwrite_disks()
+    if not disks:
+        sys.exit("No writable whole disks found; no configuration generated.")
+
+    print("Detected whole disks (this script will not modify them):")
+    for i, disk in enumerate(disks, 1):
+        model = (disk.get("model") or "").strip()
+        transport = (disk.get("tran") or "").strip()
+        print(
+            f"  {i}. {disk['path']}  "
+            f"{disk['size'] / GIB:.1f} GiB  "
+            f"{model}  {transport}"
+        )
+
+    try:
+        choice = int(input("Select target disk number: ").strip())
+        if not 1 <= choice <= len(disks):
+            raise ValueError
+    except ValueError:
+        sys.exit("Invalid selection; no configuration generated.")
+
+    disk = disks[choice - 1]
+    disk_path = disk["path"]
+    print(f"\nSelected target: {disk_path}")
+    print("This selection will appear in a YAML file containing wipe actions.")
+    if input(f'Type exactly "USE {disk_path}" to continue: ').strip() != f"USE {disk_path}":
+        sys.exit("Confirmation did not match; no configuration generated.")
+
+    try:
+        home_gib = int(input("Desired /home size in whole GiB: ").strip())
+        if home_gib <= 0:
+            raise ValueError
+    except ValueError:
+        sys.exit("Enter a positive whole number of GiB; no configuration generated.")
+
+    # EFI 1 GiB + /boot 2 GiB + root 45 GiB + chosen /home,
+    # plus a small allowance for GPT/alignment.
+    required = (1 + 2 + 45 + home_gib) * GIB + 32 * MIB
+    if required > disk["size"]:
+        sys.exit(
+            "Requested layout does not fit this disk; "
+            "no configuration generated."
+        )
+
+    root_key = input("Path to root keyfile on the unlocked encrypted disk: ").strip()
+    home_key = input("Path to home keyfile on the unlocked encrypted disk: ").strip()
+
+    for label, path in (("root", root_key), ("home", home_key)):
+        if not path or not os.path.isfile(path) or not os.access(path, os.R_OK):
+            sys.exit(f"{label} keyfile is not a readable regular file; no configuration generated.")
+        try:
+            mount_info = show_keyfile_mount(path)
+        except subprocess.CalledProcessError:
+            sys.exit(f"Cannot determine mount for {label} keyfile; no configuration generated.")
+        print(f"{label} keyfile mount: {mount_info}")
+
+    print(
+        "\nConfirm: both keyfiles are on an unlocked encrypted disk "
+        "different from the selected target disk."
+    )
+    if input('Type exactly "KEYFILES ON SEPARATE ENCRYPTED DISK": ').strip() != \
+            "KEYFILES ON SEPARATE ENCRYPTED DISK":
+        sys.exit("Confirmation did not match; no configuration generated.")
+
+    print("\n# Review-only generated storage configuration.")
+    print("# This output is not an install command.")
+    print("storage:")
+    print("  config:")
+
+    def emit(text):
+        print("    " + text)
+
+    emit("- id: selected-disk")
+    emit("  type: disk")
+    emit(f"  path: {yaml_quote(disk_path)}")
+    emit("  ptable: gpt")
+    emit("  wipe: superblock")
+    emit("  grub_device: true")
+
+    partitions = [
+        ("efi-part", 1, "1G", "boot"),
+        ("boot-part", 2, "2G", None),
+        ("root-part", 3, "45G", None),
+        ("home-part", 4, f"{home_gib}G", None),
+    ]
+    for part_id, number, size, flag in partitions:
+        emit(f"- id: {part_id}")
+        emit("  type: partition")
+        emit("  device: selected-disk")
+        emit(f"  number: {number}")
+        emit(f"  size: {yaml_quote(size)}")
+        if flag:
+            emit(f"  flag: {flag}")
+        emit("  wipe: superblock")
+
+    formats = [
+        ("efi-format", "efi-part", "fat32", "EFI"),
+        ("boot-format", "boot-part", "ext4", "boot"),
+        ("root-format", "root-crypt", "ext4", "root"),
+        ("home-format", "home-crypt", "ext4", "home"),
+    ]
+    for fmt_id, volume, fstype, label in formats:
+        emit(f"- id: {fmt_id}")
+        emit("  type: format")
+        emit(f"  volume: {volume}")
+        emit(f"  fstype: {fstype}")
+        emit(f"  label: {label}")
+
+    crypts = [
+        ("root-crypt", "root-part", "cryptroot", root_key),
+        ("home-crypt", "home-part", "crypthome", home_key),
+    ]
+    for crypt_id, volume, name, keyfile in crypts:
+        emit(f"- id: {crypt_id}")
+        emit("  type: dm_crypt")
+        emit(f"  volume: {volume}")
+        emit(f"  dm_name: {name}")
+        emit(f"  keyfile: {yaml_quote(os.path.realpath(keyfile))}")
+        emit("  options: [luks]")
+
+    mounts = [
+        ("root-mount", "root-format", "/"),
+        ("boot-mount", "boot-format", "/boot"),
+        ("efi-mount", "efi-format", "/boot/efi"),
+        ("home-mount", "home-format", "/home"),
+    ]
+    for mount_id, device, path in mounts:
+        emit(f"- id: {mount_id}")
+        emit("  type: mount")
+        emit(f"  device: {device}")
+        emit(f"  path: {path}")
+
+    print("\n# Unallocated space remains unpartitioned.")
+    print("# Inspect this YAML; this generator does not execute it.")
+
+if __name__ == "__main__":
+    main()
+
+
+GPT-6 Luna:
+<!-- **Evaluating script behavior**
+
+I need to review the provided code carefully since the user seems to want an assessment. It states that the script is read-only, but I can see potential risks with the keyfile path and mounted disks. The YAML format order before the dm_crypt reference raises questions about action dependencies and configuration order in Curtin docs. I need to inspect crypttab behavior and key handling, along with how actions must precede any references in the configuration. It seems like order is critical here for validation.**Analyzing Curtin configuration**
+
+I'm looking at how Curtin supports arbitrary ordered action configurations, but I see that references are expected before crypt actions, which seems off. The shell script doesn’t modify the system despite being able to access paths. I need to ensure that permissions are managed correctly. The YAML formatting with JSON and Unicode is fine, but I worry about how sizes are represented—Curtin might interpret “1G” as GB instead of GiB. I also noticed that keyfile paths are leaking into the output, and I need to confirm key integrity and uniqueness for root and home.**Reviewing storage YAML safety**
+
+I need to think carefully about the generated storage YAML. It has wipe actions that must not be executed without thorough review first. The user shared their code, and since they previously asked about running a .py file, it seems they want to execute it. I should explain that it safely enumerates actual block disks and generates YAML without making changes, but it could accidentally display sensitive paths. I must emphasize the importance of confirming the config review before any generation. So, running the generator isn’t allowed yet. -->
+<!--  -->
+这段是 Python 生成器。静态看，它没有调用 Curtin 或分区、格式化工具；`lsblk` 和 `findmnt` 用于读取信息，配置只打印到终端。不过它**会生成带有 `wipe: superblock` 的 YAML**，所以不要把输出交给 Curtin。
+
+运行前有一个需要先修正的配置问题：生成器先输出 `root-format`、`home-format`，之后才输出它们依赖的 `root-crypt`、`home-crypt`。应先输出两个 `dm_crypt` 动作，再输出基于它们的 `format` 动作；Curtin 的存储动作通过 ID 建立依赖，顺序和依赖关系需要在完整 YAML 中核对。
+
+其他审查要点：
+
+- 它会列出所有可写整盘，包括可能正在使用的系统盘；没有过滤挂载中的磁盘，也没有确认目标盘不是 Live 系统盘。二次输入确认能减少误选，但不能证明所选盘适合作为目标。
+- 两个 keyfile 路径会出现在 YAML 输出中；**文件内容不会由这段代码打印**。输出 YAML 前确认路径本身也不包含你不希望显示的个人信息。
+- `findmnt` 显示 keyfile 所在文件系统的挂载信息，但脚本并不能验证该文件系统确实加密，也不能验证它是否位于另一块物理磁盘；它把这项判断留给你人工确认，这与设计说明一致。
+- 脚本没有阻止 root 与 home 使用同一个 keyfile，也没有要求你明确选择共用或分开。运行前应决定这点，并在本地检查两个路径是否符合你的选择。
+- 生成器本身不能证明安装后的 `crypttab` 会在启动时提示口令。要把这一点列为配置审阅和安装后验证项；现在还不能据此确认行为符合目标。
+
+修正并完成审阅后，在终端进入脚本所在目录，用 `python3 脚本名.py` 运行；它会枚举磁盘并交互询问，最后把 YAML 打印到终端。此时只检查输出，不要把它交给 Curtin，也不要执行任何写盘、分区、格式化或安装操作。
+
+--------------------
+
+第 6 则用户提示（共 18 则） - 2026/10/8 03:38:53:
+请帮我输出一个修正的.py代码，谢谢
+
+GPT-6 Luna:
+<!-- **Validating partition capacity**
+
+I need to check the minimum actual partition capacity using decimal notation, specifically 1024^3 bytes, and verify available bytes without writing anything. I'll employ a concise code snippet for this, but I'll tread carefully since output could be destructive. Using the `subprocess lsblk` command should be safe to get my candidate list, making sure to exclude any mounted descendants. I should consider the crypt key file resolution, ensuring paths are printed in YAML while avoiding any secrets in the output. -->
+<!-- **Clarifying search and coding requirements**
+
+I need to confirm the exact phrase to use and make sure I quote all paths in YAML format, which means I have to include the correct strings and any cryptographic actions before formatting in Python. The user has asked for customized code related to a topic from Curtin. I’m wondering if I need to perform a web search for facts and citations again, considering I've used those before. Should I always check searches for accuracy? -->
+<!--  -->
+下面是修正版：它只读取磁盘和挂载信息，并把 YAML 打印到终端；**不会调用 Curtin、写文件或修改磁盘**。我调整了动作顺序，让 `dm_crypt` 在依赖它的 `format` 之前，并加入 `storage.version: 1`。Curtin 文档说明 `version: 1` 是受支持的存储配置格式；`keyfile` 必须在运行 Curtin 时存在，安装后的启动提示仍应在生成配置及实际安装后核对。[1]
+
+```python
+#!/usr/bin/env python3
+"""Read-only Curtin storage YAML generator.
+
+This script only reads block-device and mount information, asks questions,
+and prints YAML to stdout. It does not run Curtin or modify disks/files.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+GIB = 1024 ** 3
+MIB = 1024 ** 2
+
+
+def fail(message):
+    sys.exit(message)
+
+
+def run_json_lsblk():
+    result = subprocess.run(
+        [
+            "lsblk", "--json", "--bytes",
+            "--output", "PATH,SIZE,MODEL,TRAN,TYPE,RO,MOUNTPOINTS",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return json.loads(result.stdout).get("blockdevices", [])
+
+
+def has_mounted_descendant(device):
+    """Return True if this device or any child has a mountpoint."""
+    mountpoints = device.get("mountpoints") or []
+    if isinstance(mountpoints, str):
+        mountpoints = [mountpoints]
+
+    if any(point for point in mountpoints):
+        return True
+
+    return any(
+        has_mounted_descendant(child)
+        for child in (device.get("children") or [])
+    )
+
+
+def find_readwrite_unmounted_disks():
+    disks = []
+
+    for item in run_json_lsblk():
+        if item.get("type") != "disk":
+            continue
+
+        # lsblk may represent RO as an integer or string.
+        if str(item.get("ro", "0")) == "1":
+            continue
+
+        path = item.get("path")
+        size = item.get("size")
+        if not path or not isinstance(size, int):
+            continue
+
+        # Avoid offering disks with mounted filesystems or mounted children.
+        if has_mounted_descendant(item):
+            continue
+
+        disks.append(item)
+
+    return disks
+
+
+def yaml_quote(value):
+    # JSON double-quoted strings are valid YAML strings.
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def readable_regular_file(path):
+    return (
+        bool(path)
+        and os.path.isfile(path)
+        and os.access(path, os.R_OK)
+    )
+
+
+def emit_yaml(disk_path, home_gib, root_key, home_key):
+    def emit(line):
+        print("    " + line)
+
+    print("# Review-only generated storage configuration.")
+    print("# Do not pass this YAML to Curtin until it has been fully reviewed.")
+    print("storage:")
+    print("  version: 1")
+    print("  config:")
+
+    emit("- id: selected-disk")
+    emit("  type: disk")
+    emit(f"  path: {yaml_quote(disk_path)}")
+    emit("  ptable: gpt")
+    emit("  wipe: superblock")
+    emit("  grub_device: true")
+
+    partitions = [
+        ("efi-part", 1, "1G", "boot"),
+        ("boot-part", 2, "2G", None),
+        ("root-part", 3, "45G", None),
+        ("home-part", 4, f"{home_gib}G", None),
+    ]
+
+    for part_id, number, size, flag in partitions:
+        emit(f"- id: {part_id}")
+        emit("  type: partition")
+        emit("  device: selected-disk")
+        emit(f"  number: {number}")
+        emit(f"  size: {yaml_quote(size)}")
+        if flag:
+            emit(f"  flag: {flag}")
+        emit("  wipe: superblock")
+
+    # Define encrypted volumes before formats that refer to them.
+    crypts = [
+        ("root-crypt", "root-part", "cryptroot", root_key),
+        ("home-crypt", "home-part", "crypthome", home_key),
+    ]
+
+    for crypt_id, volume, name, keyfile in crypts:
+        emit(f"- id: {crypt_id}")
+        emit("  type: dm_crypt")
+        emit(f"  volume: {volume}")
+        emit(f"  dm_name: {name}")
+        emit(f"  keyfile: {yaml_quote(keyfile)}")
+        emit("  options: [luks]")
+
+    formats = [
+        ("efi-format", "efi-part", "fat32", "EFI"),
+        ("boot-format", "boot-part", "ext4", "boot"),
+        ("root-format", "root-crypt", "ext4", "root"),
+        ("home-format", "home-crypt", "ext4", "home"),
+    ]
+
+    for fmt_id, volume, fstype, label in formats:
+        emit(f"- id: {fmt_id}")
+        emit("  type: format")
+        emit(f"  volume: {volume}")
+        emit(f"  fstype: {fstype}")
+        emit(f"  label: {label}")
+
+    mounts = [
+        ("root-mount", "root-format", "/"),
+        ("boot-mount", "boot-format", "/boot"),
+        ("efi-mount", "efi-format", "/boot/efi"),
+        ("home-mount", "home-format", "/home"),
+    ]
+
+    for mount_id, device, path in mounts:
+        emit(f"- id: {mount_id}")
+        emit("  type: mount")
+        emit(f"  device: {device}")
+        emit(f"  path: {path}")
+
+    print()
+    print("# No swap action is configured.")
+    print("# No partition is defined for the remaining disk space.")
+
+
+def main():
+    try:
+        disks = find_readwrite_unmounted_disks()
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        fail(f"Could not safely enumerate disks: {exc}")
+
+    if not disks:
+        fail("No eligible unmounted writable whole disks found.")
+
+    print("Eligible whole disks (mounted disks/partitions are excluded):")
+    for index, disk in enumerate(disks, 1):
+        model = (disk.get("model") or "").strip()
+        transport = (disk.get("tran") or "").strip()
+        print(
+            f"  {index}. {disk['path']}  "
+            f"{disk['size'] / GIB:.1f} GiB  "
+            f"{model}  {transport}"
+        )
+
+    try:
+        choice = int(input("Select target disk number: ").strip())
+        if not 1 <= choice <= len(disks):
+            raise ValueError
+    except ValueError:
+        fail("Invalid selection; no configuration generated.")
+
+    disk = disks[choice - 1]
+    disk_path = disk["path"]
+
+    print(f"\nSelected target: {disk_path}")
+    print("The generated YAML includes wipe actions.")
+    if input(f'Type exactly "USE {disk_path}" to continue: ').strip() != f"USE {disk_path}":
+        fail("Confirmation did not match; no configuration generated.")
+
+    try:
+        home_gib = int(input("Desired /home size in whole GiB: ").strip())
+        if home_gib <= 0:
+            raise ValueError
+    except ValueError:
+        fail("Enter a positive whole number of GiB; no configuration generated.")
+
+    required = (1 + 2 + 45 + home_gib) * GIB + 32 * MIB
+    if required > disk["size"]:
+        fail("Requested layout does not fit this disk; no configuration generated.")
+
+    root_key_input = input(
+        "Path to root keyfile on the unlocked encrypted disk: "
+    ).strip()
+    home_key_input = input(
+        "Path to home keyfile on the unlocked encrypted disk: "
+    ).strip()
+
+    if not readable_regular_file(root_key_input):
+        fail("Root keyfile is not a readable regular file; no configuration generated.")
+    if not readable_regular_file(home_key_input):
+        fail("Home keyfile is not a readable regular file; no configuration generated.")
+
+    root_key = os.path.realpath(root_key_input)
+    home_key = os.path.realpath(home_key_input)
+
+    same_key_choice = input(
+        'Are root and home meant to use the same keyfile? Type "SAME" or "DIFFERENT": '
+    ).strip().upper()
+
+    if same_key_choice not in {"SAME", "DIFFERENT"}:
+        fail("Invalid keyfile choice; no configuration generated.")
+
+    if same_key_choice == "SAME" and root_key != home_key:
+        fail("For SAME, both paths must resolve to the same file.")
+    if same_key_choice == "DIFFERENT" and root_key == home_key:
+        fail("For DIFFERENT, the paths must resolve to different files.")
+
+    print(
+        "\nBefore continuing, locally verify that both keyfiles are on an "
+        "unlocked, mounted encrypted disk that is physically different from "
+        "the selected target disk."
+    )
+    if input('Type exactly "KEYFILES VERIFIED LOCALLY": ').strip() != \
+            "KEYFILES VERIFIED LOCALLY":
+        fail("Confirmation did not match; no configuration generated.")
+
+    print()
+    emit_yaml(disk_path, home_gib, root_key, home_key)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+注意：这段脚本仍然**无法证明** keyfile 所在介质已加密或与目标盘是不同的物理磁盘；它只让你本地确认。生成的 YAML 中会显示 keyfile **路径**，但不会读取或打印 keyfile 内容。即使脚本本身不写盘，生成的 YAML 含有清除签名的动作，审阅并明确确认之前不要交给 Curtin。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+
+--------------------
+
+第 7 则用户提示（共 18 则） - 2026/10/8 03:50:58:
+代码生成器能否使用.sh
+
+GPT-6 Luna:
+可以，生成器可以改写成 Bash `.sh`，用 `lsblk` 枚举磁盘、用 `read` 询问选择和确认，再把 YAML 打印到终端；只要不调用 Curtin 或分区、格式化工具，就仍可保持只读生成。
+
+不过 Bash 处理 JSON、路径引用和输入校验比 Python 更容易出错。若改写，应特别检查：无效或取消输入时立即停止；只接受正整数 home 大小并检查磁盘容量；keyfile 路径正确转义为 YAML 字符串；输出的动作顺序与依赖正确；脚本不把 keyfile 内容写进 YAML 或打印到终端。无论用 `.py` 还是 `.sh`，生成的 YAML 都含 `wipe: superblock`，未经完整审阅和你明确确认，不要交给 Curtin 执行。
+
+--------------------
+
+第 8 则用户提示（共 18 则） - 2026/10/8 03:51:34:
+请把刚才的.py代码改成.sh,谢谢
+
+GPT-6 Luna:
+<!-- **Considering Bash script approach**
+
+I need to create a robust Bash script, especially focused on handling YAML quoting issues. The user mentioned needing a .sh file, so I might rely on Python3 for JSON/YAML quoting to keep it simple. I’ll use `lsblk --json` and `jq` for parsing, while also keeping dependencies like `jq`, `realpath`, and `stat` in mind. I’ll ensure to use a simpler approach without subshells and generate JSON-escaped YAML strings safely. It’s all about making the output clean and secure!**Storing arrays with jq**
+
+I need to determine how to store disk paths as arrays with jq, keeping in mind that the fields should have no tabs. I want to simplify the JSON query for TSV output, focusing on path, size, and model. I’ll use `jq -r` and possibly `mapfile` for labels. I also want a recursive function to check if there are mounted descendants. Additionally, I need to ensure I’m correctly selecting disks based on certain conditions, including their mountpoints. Size should be parsed as a number too!**Validating YAML paths**
+
+I need to use `jq` to quote paths with a command like `jq -Rn --arg x "$1" '$x|tojson'` to convert it to JSON. Next, I'll check if the keys are the same or different for proper validation. I'm also considering how to validate home and disk capacity through bash arithmetic. I hope the signed integer type can handle disk sizes up to over 9 EiB—got to make sure it's capable enough! -->
+<!--  -->
+可以。下面是对应的 Bash 版本。它需要系统已安装 `lsblk`、`jq` 和 `realpath`；只读取磁盘信息、检查 keyfile 是否可读，然后把 YAML 打印到终端，不调用 Curtin，也不写文件或修改磁盘。
+
+保存为 `curtin-generator.sh`：
+
+```bash
+#!/usr/bin/env bash
+# Read-only Curtin YAML generator.
+# Does not run Curtin or modify disks/files.
+
+set -o pipefail
+
+die() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+
+for cmd in lsblk jq realpath; do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "需要安装命令：$cmd"
+done
+
+# JSON-quote a string; JSON double-quoted strings are valid YAML strings.
+yaml_quote() {
+    jq -Rn --arg value "$1" '$value | tojson'
+}
+
+json=$(
+    lsblk --json --bytes \
+        --output PATH,SIZE,MODEL,TRAN,TYPE,RO,MOUNTPOINTS
+) || die "无法读取磁盘信息；没有生成配置。"
+
+# Only offer writable whole disks with no mounted filesystem on the disk
+# or any of its child devices.
+mapfile -t disk_rows < <(
+    jq -r '
+        def mounted:
+            (
+                (.mountpoints // [])
+                | if type == "array"
+                  then any(.[]; . != null and . != "")
+                  else . != null and . != ""
+                  end
+            )
+            or ((.children // []) | any(.[]; mounted));
+
+        .blockdevices[]
+        | select(.type == "disk")
+        | select((.ro | tostring) != "1")
+        | select((mounted | not))
+        | [.path, (.size | tostring), (.model // ""), (.tran // "")]
+        | @tsv
+    ' <<<"$json"
+)
+
+((${#disk_rows[@]} > 0)) ||
+    die "没有找到未挂载的可写整盘；没有生成配置。"
+
+declare -a disk_paths disk_sizes
+
+printf '%s\n' "可选整盘（已排除自身或子设备存在挂载点的磁盘）："
+for i in "${!disk_rows[@]}"; do
+    IFS=$'\t' read -r path size model transport <<<"${disk_rows[$i]}"
+    disk_paths[i]=$path
+    disk_sizes[i]=$size
+
+    gib=$(awk -v bytes="$size" 'BEGIN { printf "%.1f", bytes / 1073741824 }')
+    printf '  %d. %s  %s GiB  %s  %s\n' \
+        "$((i + 1))" "$path" "$gib" "$model" "$transport"
+done
+
+read -r -p "选择目标磁盘编号：" choice
+[[ "$choice" =~ ^[0-9]+$ ]] ||
+    die "编号无效；没有生成配置。"
+
+(( choice >= 1 && choice <= ${#disk_paths[@]} )) ||
+    die "编号超出范围；没有生成配置。"
+
+disk_index=$((choice - 1))
+disk_path=${disk_paths[$disk_index]}
+disk_size=${disk_sizes[$disk_index]}
+
+printf '\n选择的目标盘：%s\n' "$disk_path"
+printf '%s\n' "生成的 YAML 包含 wipe 操作。"
+read -r -p "输入 USE $disk_path 确认：" confirmation
+[[ "$confirmation" == "USE $disk_path" ]] ||
+    die "确认不匹配；没有生成配置。"
+
+read -r -p "/home 大小（整 GiB，正整数）：" home_gib
+[[ "$home_gib" =~ ^[0-9]+$ ]] && (( home_gib > 0 )) ||
+    die "请输入正整数 GiB；没有生成配置。"
+
+# EFI 1 GiB + /boot 2 GiB + root 45 GiB + chosen /home,
+# with a small allowance for GPT/alignment.
+required_bytes=$(( (1 + 2 + 45 + home_gib) * 1024 * 1024 * 1024 + 32 * 1024 * 1024 ))
+(( required_bytes <= disk_size )) ||
+    die "所选布局放不进目标盘；没有生成配置。"
+
+read -r -p "root keyfile 路径（位于已解锁的加密磁盘）：" root_key_input
+read -r -p "home keyfile 路径（位于已解锁的加密磁盘）：" home_key_input
+
+[[ -f "$root_key_input" && -r "$root_key_input" ]] ||
+    die "root keyfile 不是可读的普通文件；没有生成配置。"
+[[ -f "$home_key_input" && -r "$home_key_input" ]] ||
+    die "home keyfile 不是可读的普通文件；没有生成配置。"
+
+root_key=$(realpath -- "$root_key_input") ||
+    die "无法解析 root keyfile 路径；没有生成配置。"
+home_key=$(realpath -- "$home_key_input") ||
+    die "无法解析 home keyfile 路径；没有生成配置。"
+
+read -r -p 'root 和 home 是否使用同一 keyfile？输入 SAME 或 DIFFERENT：' key_choice
+key_choice=${key_choice^^}
+
+case "$key_choice" in
+    SAME)
+        [[ "$root_key" == "$home_key" ]] ||
+            die "选择 SAME 时，两个路径必须指向同一个文件。"
+        ;;
+    DIFFERENT)
+        [[ "$root_key" != "$home_key" ]] ||
+            die "选择 DIFFERENT 时，两个路径必须指向不同文件。"
+        ;;
+    *)
+        die "选择无效；没有生成配置。"
+        ;;
+esac
+
+printf '\n%s\n' \
+    "请在本地确认：两个 keyfile 位于已解锁、已挂载的加密磁盘上，且该磁盘与目标盘是不同的物理磁盘。"
+read -r -p '输入 KEYFILES VERIFIED LOCALLY 确认：' key_confirmation
+[[ "$key_confirmation" == "KEYFILES VERIFIED LOCALLY" ]] ||
+    die "确认不匹配；没有生成配置。"
+
+disk_yaml=$(yaml_quote "$disk_path")
+root_key_yaml=$(yaml_quote "$root_key")
+home_key_yaml=$(yaml_quote "$home_key")
+home_size_yaml=$(yaml_quote "${home_gib}G")
+
+cat <<YAML
+# Review-only generated storage configuration.
+# Do not pass this YAML to Curtin until it has been fully reviewed.
+storage:
+  version: 1
+  config:
+    - id: selected-disk
+      type: disk
+      path: ${disk_yaml}
+      ptable: gpt
+      wipe: superblock
+      grub_device: true
+
+    - id: efi-part
+      type: partition
+      device: selected-disk
+      number: 1
+      size: "1G"
+      flag: boot
+      wipe: superblock
+
+    - id: boot-part
+      type: partition
+      device: selected-disk
+      number: 2
+      size: "2G"
+      wipe: superblock
+
+    - id: root-part
+      type: partition
+      device: selected-disk
+      number: 3
+      size: "45G"
+      wipe: superblock
+
+    - id: home-part
+      type: partition
+      device: selected-disk
+      number: 4
+      size: ${home_size_yaml}
+      wipe: superblock
+
+    - id: root-crypt
+      type: dm_crypt
+      volume: root-part
+      dm_name: cryptroot
+      keyfile: ${root_key_yaml}
+      options: [luks]
+
+    - id: home-crypt
+      type: dm_crypt
+      volume: home-part
+      dm_name: crypthome
+      keyfile: ${home_key_yaml}
+      options: [luks]
+
+    - id: efi-format
+      type: format
+      volume: efi-part
+      fstype: fat32
+      label: EFI
+
+    - id: boot-format
+      type: format
+      volume: boot-part
+      fstype: ext4
+      label: boot
+
+    - id: root-format
+      type: format
+      volume: root-crypt
+      fstype: ext4
+      label: root
+
+    - id: home-format
+      type: format
+      volume: home-crypt
+      fstype: ext4
+      label: home
+
+    - id: root-mount
+      type: mount
+      device: root-format
+      path: /
+
+    - id: boot-mount
+      type: mount
+      device: boot-format
+      path: /boot
+
+    - id: efi-mount
+      type: mount
+      device: efi-format
+      path: /boot/efi
+
+    - id: home-mount
+      type: mount
+      device: home-format
+      path: /home
+
+# No swap action is configured.
+# No partition is defined for the remaining disk space.
+YAML
+```
+
+运行前先检查脚本内容。运行时它会显示候选磁盘、询问目标盘及 keyfile 路径；keyfile **内容不会被读取或打印**，但生成的 YAML 会包含 keyfile 路径。脚本无法验证 keyfile 所在介质确实是另一块加密磁盘，这仍需你在本地确认。
+
+请只把输出当作待审阅文本：它包含 `wipe: superblock`，在你完成配置审阅并明确确认之前，不要把输出交给 Curtin。
+
+--------------------
+
+第 9 则用户提示（共 18 则） - 2026/10/8 03:56:06:
+root keyfile 不是可读的普通文件；没有生成配置。
+
+GPT-6 Luna:
+<!--  -->
+脚本是在**检查 root keyfile 路径**时停止的；配置没有生成，也没有修改磁盘。常见原因是路径输错、文件尚未挂载，或输入了 `~/...`：因为路径是通过变量读取的，`~` 不会自动展开。
+
+可以先在终端只读检查路径（不要查看或粘贴文件内容）：
+
+```bash
+ls -l -- "/你的实际路径/root.key"
+test -f "/你的实际路径/root.key" && echo "是普通文件"
+test -r "/你的实际路径/root.key" && echo "当前用户可读"
+findmnt -T "/你的实际路径/root.key"
+```
+
+确认加密磁盘已解锁并挂载后，重新运行脚本，在提示处输入 keyfile 的**完整绝对路径**，不要加引号，例如 `/media/用户名/挂载点/root.key`。如果仍失败，贴出报错和路径形式即可；请不要贴 keyfile 内容。
+
+--------------------
+
+第 10 则用户提示（共 18 则） - 2026/10/8 08:48:16:
+增加一个判断，要求存放 keyfile的磁盘必须是加密的分区，包括LUKS加密或者BITLOCKER加密
+
+GPT-6 Luna:
+<!-- **Evaluating script modifications**
+
+I need to modify my script to robustly identify the mounted source partition using lsblk with FSTYPE for crypto_LUKS and BitLocker. I think the identifier for BitLocker might be recognized as "BitLocker" when checking the blkid type. It seems essential to ensure I have the latest information for this. I'll need to search for current facts to verify these details. Let's see what I can find! -->
+<!-- **Clarifying BitLocker mechanics**
+
+I need to modify shell code and clarify that BitLocker isn't just an "unlocked encrypted partition" detectable via `lsblk`. The filesystem may show as ntfs or fuse.dislocker, although the underlying block partition is actually BitLocker encrypted. For a dislocker mounted file, I should check `findmnt` for source, which could be something like `/dev/loop...`. It seems complicated to build a robust mapping, especially since I need to examine the containing mount target path first.**Understanding BitLocker and keyfile tracing**
+
+I’m trying to figure out how to identify a keyfile stored on a decrypted BitLocker mount, which has a source like `...dislocker-file`. The `findmnt` command shows the source as `/dev/loopX`, indicating it might have an ntfs type, but there’s no hint of BitLocker. I need to trace the loop backing file using `losetup --json`. Plus, I must ensure the mounted media is still encrypted and not revealing a clear key volume. It’s tricky because verifying encryption based solely on mountpoints is challenging.**Creating a script for partition verification**
+
+I need to create a script that confirms whether the source partition is marked as BitLocker or has a crypto_LUKS source chain. When I unlock a LUKS mount through dm-mapper, the `lsblk` tree shows the FSTYPE as crypto_LUKS on the underlying partition, which can then map to a mounted child. Using `findmnt`, I can get the source of that mapper. I should also correlate the path and its ancestors in the `lsblk` tree for accuracy. -->
+<!--  -->
+<!--  -->
+可以加，但**不能仅凭 keyfile 所在目录的文件系统类型就可靠判断加密类型**：解锁后的 LUKS 挂载通常能追溯到 `crypto_LUKS` 分区；BitLocker 经 Dislocker 解锁后，挂载来源可能显示为 loop/NTFS，原始 BitLocker 分区不一定能从挂载点自动追溯出来。若脚本把这种情况直接判为“已验证”，会给出错误保证。
+
+比较安全的做法是：脚本要求你输入**存放 keyfile 的底层加密分区设备路径**，用 `blkid` 检查它的类型必须是 `crypto_LUKS` 或 `BitLocker`，再要求你人工确认该分区确实对应 keyfile 所在的已解锁挂载。`blkid` 能否识别 BitLocker，取决于当前系统的工具版本；无法识别时应停止，而不是放行。
+
+可在脚本中加入下面的检查函数，并在 keyfile 文件检查之后调用：
+
+```bash
+verify_encrypted_keyfile_partition() {
+    local label=$1
+    local partition type confirmation
+
+    read -r -p \
+        "$label keyfile 所在加密分区的设备路径（如 /dev/sdXY）：" \
+        partition
+
+    [[ "$partition" == /dev/* && -b "$partition" ]] ||
+        die "$label：路径不是有效的块设备；没有生成配置。"
+
+    type=$(blkid -s TYPE -o value -- "$partition" 2>/dev/null) ||
+        die "$label：无法读取该分区类型；没有生成配置。"
+
+    case "${type,,}" in
+        crypto_luks)
+            printf '%s：检测到 LUKS 分区（%s）。\n' "$label" "$partition"
+            ;;
+        bitlocker)
+            printf '%s：检测到 BitLocker 分区（%s）。\n' "$label" "$partition"
+            ;;
+        *)
+            die "$label：检测到的分区类型是 '${type:-未知}'，不是已识别的 LUKS 或 BitLocker；没有生成配置。"
+            ;;
+    esac
+
+    printf '%s\n' \
+        "请在本地确认：这是该 keyfile 所在挂载的底层加密分区，且它不同于目标安装盘。"
+    read -r -p "输入 VERIFY $partition 确认：" confirmation
+
+    [[ "$confirmation" == "VERIFY $partition" ]] ||
+        die "$label：确认不匹配；没有生成配置。"
+
+    printf '%s\n' "$partition"
+}
+```
+
+在脚本已有的 keyfile 路径检查之后加入：
+
+```bash
+root_key_partition=$(verify_encrypted_keyfile_partition root)
+home_key_partition=$(verify_encrypted_keyfile_partition home)
+```
+
+如果 root 和 home 的 keyfile 实际位于同一分区，可以输入同一个分区路径；如果要求它们位于不同分区，脚本还应另外比较这两个分区路径。注意，这项检查验证的是所输入分区的类型，**仍无法独立证明该分区就是 keyfile 所在挂载的底层设备**；这部分必须由你在本地确认。不要输入或发送任何 LUKS/BitLocker 密码、恢复密钥或 keyfile 内容。
+
+--------------------
+
+第 11 则用户提示（共 18 则） - 2026/10/8 08:50:37:
+那就限定只允许LUKS加密分区，
+
+GPT-6 Luna:
+<!-- **Updating script for LUKS detection**
+
+I need to provide a code change to handle only LUKS partitions. The user wants a robust detection function for LUKS underlying partitions. I'll simplify by checking for a keyfile backing the LUKS partition and validating the block ID for TYPE=crypto_LUKS while ensuring that the keyfile resides in an unlocked filesystem. I'll also add a function to prevent selecting the target partition and confirm the mapping. It sounds like the user wants a comprehensive script update and specific instructions.**Identifying parent disk for LUKS partitions**
+
+I need to determine the parent disk for a LUKS partition using the `lsblk` command. It's important that I check the block ID path and ensure it doesn't belong to the same physical target disk. I'll rely on `lsblk -ndo PKNAME` to find the parent of the partition. Since the whole disk returns blank, I should use `readlink -f` for the canonical device. Comparing top-level disk ancestors will help me confirm the correct device. Lastly, I’ll ensure that the type is set to ‘part’ to enforce proper detection.**Resolving PKNAME parent for LUKS partitions**
+
+I need to determine the PKNAME parent, which might be sourced from the `/dev/disk/by-id` symlink path. I'll use `realpath` to find the canonical path and compare it to the target. It's essential to ensure both LUKS partitions have their keyfiles. My function doesn't check for mount relationships manually, so I'll need to address that separately. The script output will only include paths. To avoid issues with command substitution in the subshell, I can use globals directly within the function. -->
+<!--  -->
+可以。把之前脚本中允许 `crypto_LUKS` 或 `BitLocker` 的检查改成**仅接受 `crypto_LUKS`**。下面函数要求你输入 keyfile 所在的底层 LUKS 分区，并检查它确实被 `blkid` 识别为 `crypto_LUKS`、是分区而非整盘，而且不在目标安装盘上。
+
+把函数放到脚本前面的辅助函数区域：
+
+```bash
+verify_luks_keyfile_partition() {
+    local label=$1
+    local partition type part_type parent target_real parent_real confirmation
+
+    read -r -p "$label keyfile 所在的 LUKS 分区设备路径：" partition
+
+    [[ "$partition" == /dev/* && -b "$partition" ]] ||
+        die "$label：路径不是有效块设备；没有生成配置。"
+
+    partition=$(realpath -- "$partition") ||
+        die "$label：无法解析分区路径；没有生成配置。"
+
+    type=$(blkid -s TYPE -o value -- "$partition" 2>/dev/null) ||
+        die "$label：无法读取分区类型；没有生成配置。"
+
+    [[ "$type" == "crypto_LUKS" ]] ||
+        die "$label：分区类型不是 crypto_LUKS；没有生成配置。"
+
+    part_type=$(lsblk -ndo TYPE -- "$partition" 2>/dev/null) ||
+        die "$label：无法读取块设备信息；没有生成配置。"
+
+    [[ "$part_type" == "part" ]] ||
+        die "$label：设备不是分区；没有生成配置。"
+
+    parent=$(lsblk -ndo PKNAME -- "$partition" 2>/dev/null) ||
+        die "$label：无法确定分区所属磁盘；没有生成配置。"
+    [[ -n "$parent" ]] ||
+        die "$label：无法确定分区所属磁盘；没有生成配置。"
+
+    target_real=$(realpath -- "$disk_path") ||
+        die "无法解析目标盘路径；没有生成配置。"
+    parent_real=$(realpath -- "/dev/$parent") ||
+        die "$label：无法解析分区所属磁盘；没有生成配置。"
+
+    [[ "$parent_real" != "$target_real" ]] ||
+        die "$label：LUKS 分区属于目标安装盘；没有生成配置。"
+
+    printf '%s：检测到 crypto_LUKS 分区 %s。\n' "$label" "$partition"
+    printf '%s\n' \
+        "请在本地确认：keyfile 确实位于该 LUKS 分区解锁后的挂载中。"
+    read -r -p "输入 VERIFY $partition 确认：" confirmation
+    [[ "$confirmation" == "VERIFY $partition" ]] ||
+        die "$label：确认不匹配；没有生成配置。"
+}
+```
+
+然后在原脚本中，**keyfile 文件可读性检查之后**调用：
+
+```bash
+command -v blkid >/dev/null 2>&1 ||
+    die "需要 blkid 命令；没有生成配置。"
+
+verify_luks_keyfile_partition root
+verify_luks_keyfile_partition home
+```
+
+这项检查只确认输入的底层分区带有 `crypto_LUKS` 签名，并且不属于目标安装盘；它**不能自动证明 keyfile 文件确实在该分区解锁后的挂载中**，所以仍保留了本地人工确认。检查失败时会停止，不会生成配置。
+
+--------------------
+
+第 12 则用户提示（共 18 则） - 2026/10/8 08:53:15:
+请直接给出调整后的完整脚本，谢谢，要不然我不知道具体加在什么地方。
+
+GPT-6 Luna:
+<!--  -->
+<!-- **Refining script execution**
+
+I need to deliver the entire script within manageable token limits. I should include a citation on the `blkid` statement and mention the `chmod` invocation too. I won't provide exact guarantees because I realize that using `blkid` with non-root might lead to cached unverified data, since it’s a shell tool. Using `blkid --probe -s TYPE -o value` might require root privileges, and I don't want to suggest running as root. It’s safer to ensure that my script works without needing elevated permissions.**Reviewing jq syntax and validation**
+
+I want to make sure the `jq mounted` syntax is correct. The expression `any(.[]; condition)` does seem to work for piping input arrays. I need to be careful with `required_bytes`, as arithmetic overflow can occur in bash if the input is too large. To avoid issues, I should limit the number of digits, say to a maximum of six, and ensure it's less than or equal to one million GiB. I'll need to validate decimal inputs, and normalize them to avoid any potential octal errors.**Exploring blkid and lsblk commands**
+
+I'm analyzing the use of `blkid -p -o value -s TYPE` and checking the ordering to see if it works correctly. I think using `blkid -p -s TYPE -o value "$partition"` is likely accepted as a valid command. I need to compare the parent to the target using `lsblk -ndo PKNAME`, and it's important to consider the options for `lsblk` with the device correctly placed before the `--`. Finally, targeting via symlink with `realpath` seems to be a good approach. -->
+<!--  -->
+下面是完整的 `.sh` 脚本。它只接受 `blkid` 能识别为 `crypto_LUKS` 的 keyfile 所在分区；无法识别时会停止，不会生成 YAML。`blkid` 用来读取块设备签名类型，但脚本仍要求你人工确认该分区确实是 keyfile 所在挂载的底层设备。[1]
+
+脚本只读取信息并向终端打印配置；**不会运行 Curtin、写文件或修改磁盘**。生成的 YAML 含有 `wipe: superblock`，不要在完成审阅并明确确认之前交给 Curtin。
+
+```bash
+#!/usr/bin/env bash
+# Read-only Curtin YAML generator.
+# Does not run Curtin or modify disks/files.
+
+set -o pipefail
+
+die() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+
+for cmd in lsblk jq realpath blkid; do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "需要安装命令：$cmd"
+done
+
+# JSON double-quoted strings are valid YAML strings.
+yaml_quote() {
+    jq -Rn --arg value "$1" '$value | tojson'
+}
+
+json=$(
+    lsblk --json --bytes \
+        --output PATH,SIZE,MODEL,TRAN,TYPE,RO,MOUNTPOINTS
+) || die "无法读取磁盘信息；没有生成配置。"
+
+# Exclude read-only whole disks and disks that have any mounted
+# filesystem on themselves or on their child devices.
+mapfile -t disk_rows < <(
+    jq -r '
+        def mounted:
+            (
+                (.mountpoints // [])
+                | if type == "array"
+                  then any(.[]; . != null and . != "")
+                  else . != null and . != ""
+                  end
+            )
+            or ((.children // []) | any(.[]; mounted));
+
+        .blockdevices[]
+        | select(.type == "disk")
+        | select((.ro | tostring) != "1")
+        | select((mounted | not))
+        | [.path, (.size | tostring), (.model // ""), (.tran // "")]
+        | @tsv
+    ' <<<"$json"
+)
+
+((${#disk_rows[@]} > 0)) ||
+    die "没有找到未挂载的可写整盘；没有生成配置。"
+
+declare -a disk_paths disk_sizes
+
+printf '%s\n' "可选整盘（自身或子设备有挂载点的磁盘已排除）："
+for i in "${!disk_rows[@]}"; do
+    IFS=$'\t' read -r path size model transport <<<"${disk_rows[$i]}"
+    disk_paths[i]=$path
+    disk_sizes[i]=$size
+
+    gib=$(awk -v bytes="$size" 'BEGIN { printf "%.1f", bytes / 1073741824 }')
+    printf '  %d. %s  %s GiB  %s  %s\n' \
+        "$((i + 1))" "$path" "$gib" "$model" "$transport"
+done
+
+read -r -p "选择目标磁盘编号：" choice
+[[ "$choice" =~ ^[0-9]+$ ]] ||
+    die "编号无效；没有生成配置。"
+
+(( choice >= 1 && choice <= ${#disk_paths[@]} )) ||
+    die "编号超出范围；没有生成配置。"
+
+disk_index=$((choice - 1))
+disk_path=${disk_paths[$disk_index]}
+disk_size=${disk_sizes[$disk_index]}
+
+printf '\n选择的目标盘：%s\n' "$disk_path"
+printf '%s\n' "生成的 YAML 包含 wipe 操作。"
+read -r -p "输入 USE $disk_path 确认：" confirmation
+[[ "$confirmation" == "USE $disk_path" ]] ||
+    die "确认不匹配；没有生成配置。"
+
+read -r -p "/home 大小（整 GiB，正整数）：" home_gib
+[[ "$home_gib" =~ ^[0-9]+$ ]] ||
+    die "请输入正整数 GiB；没有生成配置。"
+((${#home_gib} <= 6)) ||
+    die "输入的 /home 大小过大；没有生成配置。"
+
+# Force base-10 interpretation, including inputs with leading zeroes.
+home_gib=$((10#$home_gib))
+(( home_gib > 0 )) ||
+    die "请输入大于零的 GiB 数值；没有生成配置。"
+
+required_bytes=$(( (1 + 2 + 45 + home_gib) * 1024 * 1024 * 1024 + 32 * 1024 * 1024 ))
+(( required_bytes <= disk_size )) ||
+    die "所选布局放不进目标盘；没有生成配置。"
+
+read -r -p "root keyfile 路径：" root_key_input
+read -r -p "home keyfile 路径：" home_key_input
+
+[[ -f "$root_key_input" && -r "$root_key_input" ]] ||
+    die "root keyfile 不是可读的普通文件；没有生成配置。"
+[[ -f "$home_key_input" && -r "$home_key_input" ]] ||
+    die "home keyfile 不是可读的普通文件；没有生成配置。"
+
+root_key=$(realpath -- "$root_key_input") ||
+    die "无法解析 root keyfile 路径；没有生成配置。"
+home_key=$(realpath -- "$home_key_input") ||
+    die "无法解析 home keyfile 路径；没有生成配置。"
+
+read -r -p 'root 和 home 是否使用同一 keyfile？输入 SAME 或 DIFFERENT：' key_choice
+key_choice=${key_choice^^}
+
+case "$key_choice" in
+    SAME)
+        [[ "$root_key" == "$home_key" ]] ||
+            die "选择 SAME 时，两个路径必须指向同一个文件。"
+        ;;
+    DIFFERENT)
+        [[ "$root_key" != "$home_key" ]] ||
+            die "选择 DIFFERENT 时，两个路径必须指向不同文件。"
+        ;;
+    *)
+        die "选择无效；没有生成配置。"
+        ;;
+esac
+
+# Verify that the supplied keyfile backing device is a LUKS partition
+# and that its parent disk is not the selected installation disk.
+verify_luks_keyfile_partition() {
+    local label=$1
+    local partition type part_type parent target_real parent_real confirmation
+
+    read -r -p "$label keyfile 所在的 LUKS 分区设备路径：" partition
+
+    [[ "$partition" == /dev/* && -b "$partition" ]] ||
+        die "$label：路径不是有效块设备；没有生成配置。"
+
+    partition=$(realpath -- "$partition") ||
+        die "$label：无法解析分区路径；没有生成配置。"
+
+    # Low-level probing avoids relying only on blkid's unprivileged cache.
+    type=$(blkid -p -s TYPE -o value -- "$partition" 2>/dev/null) ||
+        die "$label：无法探测分区类型；没有生成配置。"
+
+    [[ "$type" == "crypto_LUKS" ]] ||
+        die "$label：分区类型不是 crypto_LUKS；没有生成配置。"
+
+    part_type=$(lsblk -ndo TYPE -- "$partition" 2>/dev/null) ||
+        die "$label：无法读取块设备信息；没有生成配置。"
+
+    [[ "$part_type" == "part" ]] ||
+        die "$label：设备不是分区；没有生成配置。"
+
+    parent=$(lsblk -ndo PKNAME -- "$partition" 2>/dev/null) ||
+        die "$label：无法确定分区所属磁盘；没有生成配置。"
+    [[ -n "$parent" ]] ||
+        die "$label：无法确定分区所属磁盘；没有生成配置。"
+
+    target_real=$(realpath -- "$disk_path") ||
+        die "无法解析目标盘路径；没有生成配置。"
+    parent_real=$(realpath -- "/dev/$parent") ||
+        die "$label：无法解析分区所属磁盘；没有生成配置。"
+
+    [[ "$parent_real" != "$target_real" ]] ||
+        die "$label：LUKS 分区属于目标安装盘；没有生成配置。"
+
+    printf '%s：检测到 crypto_LUKS 分区 %s。\n' "$label" "$partition"
+    printf '%s\n' \
+        "请在本地确认：这个分区就是该 keyfile 所在挂载的底层设备。"
+    read -r -p "输入 VERIFY $partition 确认：" confirmation
+    [[ "$confirmation" == "VERIFY $partition" ]] ||
+        die "$label：确认不匹配；没有生成配置。"
+}
+
+verify_luks_keyfile_partition root
+verify_luks_keyfile_partition home
+
+printf '\n%s\n' \
+    "请在本地确认：两个 keyfile 所在的已解锁 LUKS 分区与目标安装盘是不同的物理磁盘。"
+read -r -p '输入 KEYFILES VERIFIED LOCALLY 确认：' key_confirmation
+[[ "$key_confirmation" == "KEYFILES VERIFIED LOCALLY" ]] ||
+    die "确认不匹配；没有生成配置。"
+
+disk_yaml=$(yaml_quote "$disk_path")
+root_key_yaml=$(yaml_quote "$root_key")
+home_key_yaml=$(yaml_quote "$home_key")
+home_size_yaml=$(yaml_quote "${home_gib}G")
+
+cat <<YAML
+# Review-only generated storage configuration.
+# Do not pass this YAML to Curtin until it has been fully reviewed.
+storage:
+  version: 1
+  config:
+    - id: selected-disk
+      type: disk
+      path: ${disk_yaml}
+      ptable: gpt
+      wipe: superblock
+      grub_device: true
+
+    - id: efi-part
+      type: partition
+      device: selected-disk
+      number: 1
+      size: "1G"
+      flag: boot
+      wipe: superblock
+
+    - id: boot-part
+      type: partition
+      device: selected-disk
+      number: 2
+      size: "2G"
+      wipe: superblock
+
+    - id: root-part
+      type: partition
+      device: selected-disk
+      number: 3
+      size: "45G"
+      wipe: superblock
+
+    - id: home-part
+      type: partition
+      device: selected-disk
+      number: 4
+      size: ${home_size_yaml}
+      wipe: superblock
+
+    - id: root-crypt
+      type: dm_crypt
+      volume: root-part
+      dm_name: cryptroot
+      keyfile: ${root_key_yaml}
+      options: [luks]
+
+    - id: home-crypt
+      type: dm_crypt
+      volume: home-part
+      dm_name: crypthome
+      keyfile: ${home_key_yaml}
+      options: [luks]
+
+    - id: efi-format
+      type: format
+      volume: efi-part
+      fstype: fat32
+      label: EFI
+
+    - id: boot-format
+      type: format
+      volume: boot-part
+      fstype: ext4
+      label: boot
+
+    - id: root-format
+      type: format
+      volume: root-crypt
+      fstype: ext4
+      label: root
+
+    - id: home-format
+      type: format
+      volume: home-crypt
+      fstype: ext4
+      label: home
+
+    - id: root-mount
+      type: mount
+      device: root-format
+      path: /
+
+    - id: boot-mount
+      type: mount
+      device: boot-format
+      path: /boot
+
+    - id: efi-mount
+      type: mount
+      device: efi-format
+      path: /boot/efi
+
+    - id: home-mount
+      type: mount
+      device: home-format
+      path: /home
+
+# No swap action is configured.
+# No partition is defined for the remaining disk space.
+YAML
+```
+
+该检查要求 keyfile 所在的底层 LUKS 分区能被 `blkid` 直接识别；如果因权限或设备映射导致识别失败，脚本会停止。它也无法自动证明输入的 LUKS 分区确实对应 keyfile 所在的挂载，因此保留了人工确认步骤。不要输入或发送任何口令、恢复密钥或 keyfile 内容。
+
+查看全文
+[1] blkid(8) — util-linux — Debian testing — https://manpages.debian.org/testing/util-linux/blkid.8.en.html
+
+--------------------
+
+第 13 则用户提示（共 18 则） - 2026/10/8 08:55:14:
+好的，我用新的脚本去测试是否能生成所需配置文件。
+
+GPT-6 Luna:
+可以测试生成器，但它**只会把 YAML 打印到终端，不会创建配置文件**。选盘、输入确认和 keyfile 路径后，如果所有检查通过，终端会显示完整 YAML；目前请只检查输出，**不要保存后交给 Curtin 执行**。
+
+测试时用测试用的 keyfile 路径即可，别把 keyfile 内容发到聊天里。生成结果里会包含目标盘路径和 keyfile 路径，分享前先将它们替换成占位符。
+
+--------------------
+
+第 14 则用户提示（共 18 则） - 2026/10/8 09:00:13:
+root keyfile 不是可读的普通文件；没有生成配置。
+这个报错是什么原因
+
+GPT-6 Luna:
+脚本在检查 **root keyfile 路径**时没通过，所以停止了；它没有生成 YAML。检查条件是：输入的路径必须指向一个存在的普通文件，并且当前运行脚本的用户可读：
+
+```bash
+[[ -f "$root_key_input" && -r "$root_key_input" ]]
+```
+
+常见原因有：
+
+- 路径输错，或文件还没创建。
+- 加密磁盘未解锁、未挂载，或挂载路径变了。
+- 输入了 `~/...`：脚本通过变量读取路径，`~` 不会自动展开；请改用完整绝对路径。
+- 当前用户没有该文件的读取权限。
+- 输入路径指向目录、断开的符号链接，或其他非普通文件。
+
+可以用下面这些只读检查命令查看状态，不要读取或打印 keyfile 内容：
+
+```bash
+ls -l -- "/完整路径/root.key"
+test -f "/完整路径/root.key" && echo "普通文件"
+test -r "/完整路径/root.key" && echo "当前用户可读"
+findmnt -T "/完整路径/root.key"
+```
+
+确保加密盘已解锁并挂载，再输入完整路径；路径含空格也可以，提示处直接输入路径即可，不要额外加引号。
+
+--------------------
+
+第 15 则用户提示（共 18 则） - 2026/10/8 09:02:30:
+root keyfile是谁创建的，位置在哪里
+
+GPT-6 Luna:
+`root keyfile` 是给 Curtin 在安装时读取、用作 **LUKS 密钥材料**的文件。你提供的脚本只检查这个文件是否存在且可读，**不会创建它**。
+
+它的位置由你在脚本提示时输入的路径决定；按你的设计，应位于另一块已解锁并挂载的 LUKS 加密磁盘上，而不是目标安装盘。脚本会把这个路径写进生成的 YAML，但无法自动确认文件确实位于该加密磁盘中。
+
+不要把 keyfile 内容发到聊天里。安装过程中 Curtin 会读取它；安装后的系统启动时是否按预期提示输入口令，还需要审查生成的 `crypttab` 等配置。
+
+--------------------
+
+第 16 则用户提示（共 18 则） - 2026/10/8 09:03:20:
+这个文件当前还没有创建，所有找不到。
+
+GPT-6 Luna:
+<!--  -->
+<!--  -->
+对，报错就是因为 `root.key` 目前还不存在。脚本**不会创建 keyfile**，只检查你输入的路径是否指向一个已存在且当前用户可读的普通文件；因此它按设计停止了，没有生成 YAML。
+
+另外需要先澄清一个关键点：Curtin 文档把 `keyfile` 描述为 LUKS 使用的密码材料，并说明目标系统启动时会提示输入密码。也就是说，启动时要输入的内容必须能解锁用该 keyfile 配置的卷；如果 keyfile 是随机字节，通常无法像普通口令那样手动输入。不要创建空文件来绕过检查。[1]
+
+你最初要求先只读审查、完成完整配置审阅并明确确认前不进行写入；所以现在先不要创建 keyfile，也不要把配置交给 Curtin。还需要把“安装时从文件读取密钥材料”和“启动时人工输入的口令”这两个环节的对应关系，以及最终 `crypttab` 是否确实提示输入，核对清楚。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+
+--------------------
+
+第 17 则用户提示（共 18 则） - 2026/10/8 09:06:56:
+只读审查、完成完整配置审阅并明确确认前不进行写入。这是您给我的建议，被我当时采纳了。如果这个已经阻碍代码的生成和测试，可以适当放宽要求。先保证可以生成代码和测试的顺利进行。
+
+GPT-6 Luna:
+<!-- **Assessing file write clarity**
+
+I need to focus on clarifying that file writes should be limited to key file creation, while also ensuring there’s no disk installation involved. It seems crucial to assess the actual semantics with respect to the Curtin context through the search results. However, the search returned content that isn't available, so I should search again to find the relevant information I'm looking for. -->
+<!-- **Considering testing options**
+
+I’m thinking about whether I could use a test-only stub. It seems I need to adjust the script for the test mode. The user mentioned they can loosen requirements, so they probably expect me to proceed despite the error. I should explain that some files are absent and suggest a two-stage process without secrets. Since the answer is actionable, I might suggest modifications like creating dummy test files on an encrypted disk for testing purposes! -->
+<!--  -->
+明白，可以适当放宽：**允许在已解锁并挂载的加密磁盘上创建 keyfile，并测试生成器；仍不对目标安装盘执行分区、格式化或安装。**但当前脚本还有一个测试障碍：它不仅要求 keyfile 文件存在，还要求你提供对应的 LUKS 分区，因此随便建两个临时空文件仍过不了后续检查。
+
+还要更正我前面说错的一点：Curtin 通常把 `keyfile` 文件的**内容作为 LUKS 口令**；安装后启动时会提示输入对应口令。只有把 `/dev/urandom` 或 `/dev/random` 作为 `keyfile` 路径时，才是特殊的随机密钥处理方式。若希望启动时人工输入，keyfile 内容必须是你自己能输入的口令；不要用随机字节文件来满足这个目标。[1]
+
+为了先测试脚本而不接触真实密钥，合适的下一步是给生成器加一个**测试模式**：使用占位路径和假数据验证 YAML 输出格式，明确标注生成结果不可用于安装，并跳过真实 LUKS 分区验证。之后再用真实 keyfile 做本地测试。keyfile 内容、口令或恢复密钥都不需要发给我。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+
+--------------------
+
+第 18 则用户提示（共 18 则） - 2026/10/8 09:09:21:
+请帮我保持当前对话的连续性，开始新的对话，谢谢
+
+GPT-6 Luna:
+我无法替你开启新对话。你可以新建聊天，并粘贴下面这段摘要来衔接：
+
+> 我在 Xubuntu 24.04 Live 虚拟机中手动使用 Curtin。请先只读审查；不要提供目标盘写入、分区、格式化或安装步骤，除非我明确确认。不要索要或接收任何 LUKS 密码、keyfile 内容或恢复密钥。  
+>   
+> 目标是由生成器在 VM 内枚举磁盘、让我选择并二次确认；GPT/UEFI；EFI FAT32 1 GiB 挂载 `/boot/efi`，未加密 ext4 `/boot` 2 GiB，LUKS root 45 GiB，独立 LUKS home 大小运行时输入；剩余空间不分配，不配 swap。keyfile 暂存在另一块已解锁并挂载的 LUKS 磁盘上。安装后启动要人工输入口令。  
+>   
+> 我有一份 Bash 生成器草案：只读枚举磁盘和检查文件，最后打印 Curtin YAML，不执行 Curtin。当前脚本要求 keyfile 已存在且可读，并检查其底层分区是否为 `crypto_LUKS`；它无法自动证明该分区就是 keyfile 所在挂载的底层设备。  
+>   
+> 请注意：之前的答复曾把 Curtin `keyfile` 的含义说得不够准确。请核对文档后再判断：Curtin 通常将 keyfile 内容作为 LUKS 口令材料；启动时人工输入的口令必须与之匹配。为了安全测试，可以考虑增加仅使用占位数据、明确不可用于安装的测试模式。

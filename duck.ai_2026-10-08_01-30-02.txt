@@ -1,0 +1,1057 @@
+﻿此对话由 Duck.ai (https://duck.ai) 使用 OpenAI 的 GPT-6 Luna 模型生成。人工智能聊天可能会显示不准确或令人反感的信息（详情请参阅https://duckduckgo.com/duckai/privacy-terms）。
+
+====================
+
+第 1 则用户提示（共 8 则） - 2026/10/8 01:17:23:
+xubuntu curtin 安装前评审，第二部分代码def mount_data(info, storage_config):
+            'type': 'string',
+            'oneOf': [
+                {'pattern': _path_dev},
+                {'pattern': r'^iscsi:.*'}],
+        },
+        'model': {'type': 'string'},
+        'wwn': {
+            'type': 'string',
+            'oneOf': [
+                {'pattern': r'^0x(\d|[a-zA-Z])+'},
+                {'pattern': r'^(nvme|eui|uuid)\.([-0-9a-zA-Z])+'}],
+        },
+        'grub_device': {
+            'type': ['boolean', 'integer'],
+            'minimum': 0,
+            'maximum': 1
+        },
+        'nvme_controller': {'$ref': '#/definitions/ref_id'},
+    },
+}
+DM_CRYPT = {
+    '$schema': 'http://json-schema.org/draft-07/schema#',
+    'name': 'CURTIN-DMCRYPT',
+    'title': 'curtin storage configuration for creating encrypted volumes',
+    'description': ('Declarative syntax for specifying encrypted volumes.'),
+    'definitions': definitions,
+    'required': ['id', 'type', 'volume', 'dm_name'],
+    'oneOf': [
+        {'required': ['key']},
+        {'required': ['keyfile']}],
+    'type': 'object',
+    'additionalProperties': False,
+    'properties': {
+        'id': {'$ref': '#/definitions/id'},
+        'dm_name': {'$ref': '#/definitions/name'},
+        'volume': {'$ref': '#/definitions/ref_id'},
+        'key': {'$ref': '#/definitions/id'},
+        'keyfile': {'$ref': '#/definitions/id'},
+        'path': {'type': 'string', 'pattern': _path_dev},
+        'preserve': {'$ref': '#/definitions/preserve'},
+        'type': {'const': 'dm_crypt'},
+    },
+}
+FORMAT = {
+    '$schema': 'http://json-schema.org/draft-07/schema#',
+    'name': 'CURTIN-FORMAT',
+    'title': 'curtin storage configuration for formatting filesystems',
+    'description': ('Declarative syntax for specifying filesystem layout.'),
+    'definitions': definitions,
+    'required': ['id', 'type', 'volume', 'fstype'],
+    'type': 'object',
+    'additionalProperties': False,
+    'properties': {
+        'id': {'$ref': '#/definitions/id'},
+        'name': {'$ref': '#/definitions/name'},
+        'preserve': {'$ref': '#/definitions/preserve'},
+        'uuid': {'$ref': '#/definitions/uuid'},    # XXX: This is not used
+        'type': {'const': 'format'},
+        'fstype': {'type': 'string'},
+        'label': {'type': 'string'},
+        'volume': {'$ref': '#/definitions/ref_id'},
+        'extra_options': {'type': 'array', 'items': {'type': 'string'}},
+    },
+    'anyOf': [
+        # XXX: Accept vmtest values?
+        {'properties': {'fstype': {'pattern': r'^__.*__$'}}},
+        {'properties': {'fstype': {'enum': _fstypes}}},
+        {
+            'properties': {'preserve': {'enum': [True]}},
+            'required': ['preserve']  # this looks redundant but isn't
+        }
+    ]
+}
+LVM_PARTITION = {
+    '$schema': 'http://json-schema.org/draft-07/schema#',
+    'name': 'CURTIN-LVMPARTITION',
+xubuntu@xubuntu:~$ 
+
+
+
+GPT-6 Luna:
+<!-- **Considering code review context**
+
+The user might be asking for a code review related to Xubuntu and curtin, suggesting a need for real-world facts. Even though they didn’t explicitly request it, the mention of a review implies that the pasted code needs evaluation. So, I should probably search for relevant curtin code and schemas. I recognize that the snippet lacks repository context, making it somewhat static in nature, but I'll see if a web search can pull up more current information. -->
+这段目前**不能作为 `mount_data(info, storage_config)` 函数来评审**：函数体和 `mount` 配置都没贴出来；从 `DM_CRYPT`、`FORMAT` 开始的内容看，是 Curtin 存储配置的 JSON Schema 片段。就可见部分，安装前建议关注这些点：
+
+1. **`dm_crypt` 的密钥约束基本正确**  
+   `oneOf` 配合分别要求 `key`、`keyfile`，意味着两者必须恰好提供一个；两个都填会校验失败。Curtin 文档也要求二选一。[1]
+
+2. **检查 `wwn` 正则是否过宽**  
+   `^0x(\d|[a-zA-Z])+` 接受任意英文字母，而且没有 `$`，所以像 `0xGxyz-tail` 也可能匹配。若目标是十六进制 WWN，可考虑 `^0x[0-9a-fA-F]+$`。是否适用还要看你们接受的 WWN 格式。
+
+3. **`FORMAT.uuid` 的注释和 Schema 不一致**  
+   字段被 Schema 接受，但注释说“未使用”。若确实不会生效，建议移除该字段或明确说明兼容性，避免配置通过校验、实际安装却忽略它。Curtin 文档描述了 `uuid` 对 ext3/ext4 的用途，因此也需要核对你们所针对的 Curtin 版本与此 Schema 是否一致。[1]
+
+4. **`FORMAT.anyOf` 会放宽 `fstype` 校验**  
+   当 `preserve: true` 时，即使 `fstype` 不在 `_fstypes` 中也能通过。这可能是有意允许保留既有文件系统；建议加测试覆盖“保留时允许未知类型”和“非保留时拒绝未知类型”，确认边界符合预期。
+
+5. **安装风险不只在 Schema**  
+   这段只能验证字段形状，不能证明设备引用顺序、目标盘选择、挂载点或实际擦盘行为安全。尤其 `dm_crypt` 的 `key` 会以明文配置值出现；Curtin 文档指出它可能被复制到目标系统。生产配置应评估使用 `keyfile` 是否更合适，并避免把密钥写入日志或版本库。[1]
+
+另外，代码开头的 `def mount_data(info, storage_config)` 后面直接出现字典字段，**如果这就是原始 Python 文件内容，会有语法错误**；若只是粘贴时省略了函数体和字典变量名，请补上完整函数、对应调用处和预期输入，我才能继续检查挂载逻辑及安装副作用。
+
+查看全文
+[1] Storage — curtin 23.1.1 documentation — https://curtin.readthedocs.io/en/latest/topics/storage.html
+
+--------------------
+
+第 2 则用户提示（共 8 则） - 2026/10/8 01:18:20:
+下一步该怎么办
+
+GPT-6 Luna:
+先别直接运行安装。按这个顺序处理：
+
+1. **补齐代码**：贴出完整的 `mount_data()` 函数，包括函数体、它调用的函数，以及 `info`、`storage_config` 的示例结构。当前片段看不到挂载逻辑。
+2. **修正并验证 Schema**：确认 `wwn` 是否只允许十六进制字符；明确 `uuid` 是要生效还是仅为兼容保留；给 `preserve: true` 的 `fstype` 放宽规则加测试。
+3. **做无破坏性测试**：用一份测试配置验证 Schema 和生成的存储计划，确认目标磁盘、分区、加密卷和挂载点都符合预期。
+4. **最后再试安装**：先在虚拟机或可丢弃磁盘上完整走一遍；检查安装日志和最终挂载结果，再用于真实机器。
+
+把完整的 `mount_data()` 贴出来，我可以接着逐行审查。
+
+--------------------
+
+第 3 则用户提示（共 8 则） - 2026/10/8 01:20:07:
+我想在 Xubuntu 24.04 Live 里从终端手动调用 Curtin，使用 ISO 内 squashfs 尽量减少在线下载。请继续按步骤指导：先只读检查；审阅完整配置并确认前，不要让我运行写盘、格式化或安装命令。
+
+Live 与 Curtin
+
+    ISO 挂载于 /cdrom，设备 /dev/sr0。
+    Snap：ubuntu-desktop-bootstrap 24.04.4.1，revision 572，路径 /snap/ubuntu-desktop-bootstrap/current。
+    原先报 no availble python?，原因是 wrapper 使用 Live 的 Python，无法导入 Curtin。
+    已验证可用调用：
+    bash
+
+    PYTHON=/snap/ubuntu-desktop-bootstrap/current/usr/bin/python3.10 \
+    PYTHONPATH=/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages:/snap/ubuntu-desktop-bootstrap/current/usr/lib/python3/dist-packages \
+    /snap/ubuntu-desktop-bootstrap/current/bin/curtin --help
+
+    Curtin 版本：24.0.0-41-g8bc0121d6。
+
+磁盘和挂载
+
+    /dev/vda 100G。
+    /dev/vda1 EFI，vfat，UUID 2539-FD45，挂载 /mnt/boot/efi。
+    /dev/vda2 /boot，ext4，UUID 0e582ecf-0ed5-4bef-a274-3e3cea4ffbb3，挂载 /mnt/boot。
+    /dev/vda3 LUKS2，UUID 7ddf4b9b-b186-4be9-8716-69a8154f4fef，已解锁为 /dev/mapper/luks-7ddf4b9b-b186-4be9-8716-69a8154f4fef，内部 ext4 UUID dabb0440-9f2e-4720-9d61-aeedcd6f8f8f，挂载 /mnt。
+    /dev/vda4 LUKS2，UUID 660dcc3c-ce87-41b8-9d86-209511f2ece5，已解锁为 /dev/mapper/luks-660dcc3c-ce87-41b8-9d86-209511f2ece5，内部 ext4 UUID 00f507ed-940d-43f3-85c8-2b020e8d9a06，挂载 /mnt/home。
+    目标文件系统目前基本为空，/mnt/etc 不存在；挂载为 rw。
+    启动时两个 LUKS 容器都由用户输入密码解锁。不要在聊天中要求或接收密码。
+
+ISO 安装源
+/cdrom/casper/install-sources.yaml 声明：
+
+    xubuntu-desktop-minimal：minimal.squashfs，type: fsimage-layered，非默认。
+    xubuntu-desktop：minimal.standard.squashfs，type: fsimage-layered，默认完整 Xubuntu Desktop。
+    还有 minimal.standard.live.squashfs，但它不在默认安装源声明的路径中。
+    还未验证 Curtin 本机 fsimage-layered source URI 和实际行为，不能仅凭文件名自行确定配置。
+    三个 manifest 分别有 1168、577、137 行；内容表明分层增量关系。
+
+安装偏好
+
+    用户名：user
+    主机名：user-xubuntu
+    语言：简体中文（建议 locale zh_CN.UTF-8）
+    时区：纽约（America/New_York）
+    不自动登录。
+    用户想安装时在本机交互设定密码，不提供密码/哈希给聊天。Curtin 本身可能不负责交互提示，需审查如何在目标系统部署后、重启前本地设密码。
+
+当前要求 / 下一步
+
+    用户刚请求生成安装代码，但助手因存储配置风险没有给出可执行安装命令。
+    只读检查建议：
+    bash
+
+    SNAP=/snap/ubuntu-desktop-bootstrap/current
+    grep -R -n --include='*.py' --include='*.yaml' --include='*.yml' \
+      'fsimage-layered' \
+      "$SNAP/lib/python3.10/site-packages/curtin" \
+      "$SNAP/usr/lib/python3/dist-packages" 2>/dev/null | head -n 100
+
+    PYTHON="$SNAP/usr/bin/python3.10" \
+    PYTHONPATH="$SNAP/lib/python3.10/site-packages:$SNAP/usr/lib/python3/dist-packages" \
+    "$SNAP/bin/curtin" block-meta --help
+
+    findmnt -R /mnt
+    sudo ls -la /mnt /mnt/home /mnt/boot /mnt/boot/efi
+
+    等用户贴出检查结果后，继续核实 source 语法与 Curtin storage preserve 配置；先交付完整 YAML 供审阅，明确排除重新分区、格式化、luksFormat。建议先在虚拟机快照/克隆盘测试。确认配置前不要运行安装命令。
+
+
+GPT-6 Luna:
+<!--  -->
+先做**只读核查**，暂时不要运行 `curtin install`、`block-meta` 的实际操作或任何会改盘的命令。下面这组命令只搜索代码、查看帮助和读取挂载/文件信息；不会输入或读取 LUKS 密码。
+
+```bash
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+PYTHON="$SNAP/usr/bin/python3.10"
+PYTHONPATH="$SNAP/lib/python3.10/site-packages:$SNAP/usr/lib/python3/dist-packages"
+
+printf '%s\n' '=== Curtin fsimage-layered 实现位置 ==='
+grep -R -n --include='*.py' --include='*.yaml' --include='*.yml' \
+  'fsimage-layered' \
+  "$SNAP/lib/python3.10/site-packages/curtin" \
+  "$SNAP/usr/lib/python3/dist-packages" 2>/dev/null | head -n 100
+
+printf '%s\n' '=== Curtin block-meta 帮助 ==='
+PYTHON="$PYTHON" PYTHONPATH="$PYTHONPATH" \
+  "$SNAP/bin/curtin" block-meta --help
+
+printf '%s\n' '=== ISO 安装源声明 ==='
+cat /cdrom/casper/install-sources.yaml
+
+printf '%s\n' '=== ISO squashfs 文件 ==='
+find /cdrom/casper -maxdepth 1 -type f \
+  \( -name '*.squashfs' -o -name '*manifest*' \) -printf '%f\n' | sort
+
+printf '%s\n' '=== 当前磁盘、文件系统和挂载 ==='
+lsblk -o NAME,TYPE,SIZE,FSTYPE,UUID,MOUNTPOINTS /dev/vda
+findmnt -R /mnt
+
+printf '%s\n' '=== 目标目录现状 ==='
+sudo ls -la /mnt /mnt/home /mnt/boot /mnt/boot/efi
+```
+
+把输出贴回来即可。请勿贴任何密码、密钥或含秘密的配置内容；设备序列号等不相关信息也可以删去。看到 Curtin 对 `fsimage-layered` 的本机实现后，再核对 source URI 和 storage 配置；我会先给你完整 YAML 审阅，确认之前不会给出写盘或安装步骤。
+
+--------------------
+
+第 4 则用户提示（共 8 则） - 2026/10/8 01:22:38:
+xubuntu@xubuntu:~$ SNAP=/snap/ubuntu-desktop-bootstrap/current
+PYTHON="$SNAP/usr/bin/python3.10"
+PYTHONPATH="$SNAP/lib/python3.10/site-packages:$SNAP/usr/lib/python3/dist-packages"
+
+printf '%s\n' '=== Curtin fsimage-layered 实现位置 ==='
+grep -R -n --include='*.py' --include='*.yaml' --include='*.yml' \
+  'fsimage-layered' \
+  "$SNAP/lib/python3.10/site-packages/curtin" \
+  "$SNAP/usr/lib/python3/dist-packages" 2>/dev/null | head -n 100
+
+printf '%s\n' '=== Curtin block-meta 帮助 ==='
+PYTHON="$PYTHON" PYTHONPATH="$PYTHONPATH" \
+  "$SNAP/bin/curtin" block-meta --help
+
+printf '%s\n' '=== ISO 安装源声明 ==='
+cat /cdrom/casper/install-sources.yaml
+
+printf '%s\n' '=== ISO squashfs 文件 ==='
+find /cdrom/casper -maxdepth 1 -type f \
+  \( -name '*.squashfs' -o -name '*manifest*' \) -printf '%f\n' | sort
+
+printf '%s\n' '=== 当前磁盘、文件系统和挂载 ==='
+lsblk -o NAME,TYPE,SIZE,FSTYPE,UUID,MOUNTPOINTS /dev/vda
+findmnt -R /mnt
+
+printf '%s\n' '=== 目标目录现状 ==='
+sudo ls -la /mnt /mnt/home /mnt/boot /mnt/boot/efi
+=== Curtin fsimage-layered 实现位置 ===
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/extract.py:198:    elif source['type'] == "fsimage-layered":
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/util.py:1094:                 'fsimage-layered']
+=== Curtin block-meta 帮助 ===
+usage: curtin block-meta [-h] [-D DEVICE] [--fstype {ext4,ext3}] [--force-mode] [-t TARGET] [--boot-fstype {ext4,ext3}] [--umount] [--testmode]
+                         {custom,simple,simple-boot}
+
+positional arguments:
+  {custom,simple,simple-boot}
+                        meta-mode to use
+
+options:
+  -h, --help            show this help message and exit
+  -D DEVICE, --devices DEVICE
+                        which devices to operate on
+  --fstype {ext4,ext3}  root partition filesystem type
+  --force-mode          force mode, disable mode detection
+  -t TARGET, --target TARGET
+                        chroot to target. default is env[TARGET_MOUNT_POINT]
+  --boot-fstype {ext4,ext3}
+                        boot partition filesystem type
+  --umount              unmount any mounted filesystems before exit
+  --testmode            enable some test actions
+=== ISO 安装源声明 ===
+- default: false
+  description:
+    en: A minimal installation of the Xubuntu Desktop.
+  id: xubuntu-desktop-minimal
+  locale_support: langpack
+  name:
+    en: Xubuntu Minimal
+  path: minimal.squashfs
+  size: 2382872576
+  type: fsimage-layered
+  variant: desktop
+- default: true
+  description:
+    en: A full featured Xubuntu Desktop.
+  id: xubuntu-desktop
+  locale_support: langpack
+  name:
+    en: Xubuntu Desktop
+  path: minimal.standard.squashfs
+  size: 5794918400
+  type: fsimage-layered
+  variant: desktop
+=== ISO squashfs 文件 ===
+filesystem.manifest
+minimal.manifest
+minimal.squashfs
+minimal.standard.live.manifest
+minimal.standard.live.squashfs
+minimal.standard.manifest
+minimal.standard.squashfs
+=== 当前磁盘、文件系统和挂载 ===
+NAME                                          TYPE   SIZE FSTYPE      UUID                                 MOUNTPOINTS
+vda                                           disk   100G                                                  
+├─vda1                                        part     1G vfat        2539-FD45                            /mnt/boot/efi
+├─vda2                                        part     2G ext4        0e582ecf-0ed5-4bef-a274-3e3cea4ffbb3 /mnt/boot
+├─vda3                                        part  37.3G crypto_LUKS 7ddf4b9b-b186-4be9-8716-69a8154f4fef 
+│ └─luks-7ddf4b9b-b186-4be9-8716-69a8154f4fef crypt 37.2G ext4        dabb0440-9f2e-4720-9d61-aeedcd6f8f8f /mnt
+└─vda4                                        part  46.6G crypto_LUKS 660dcc3c-ce87-41b8-9d86-209511f2ece5 
+  └─luks-660dcc3c-ce87-41b8-9d86-209511f2ece5 crypt 46.5G ext4        00f507ed-940d-43f3-85c8-2b020e8d9a06 /mnt/home
+TARGET            SOURCE                                                FSTYPE OPTIONS
+/mnt              /dev/mapper/luks-7ddf4b9b-b186-4be9-8716-69a8154f4fef ext4   rw,relatime
+├─/mnt/home       /dev/mapper/luks-660dcc3c-ce87-41b8-9d86-209511f2ece5 ext4   rw,relatime
+└─/mnt/boot       /dev/vda2                                             ext4   rw,relatime
+  └─/mnt/boot/efi /dev/vda1                                             vfat   rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=m
+=== 目标目录现状 ===
+/mnt:
+total 28
+drwx------ 5 xubuntu xubuntu  4096 Oct  7 14:46 .
+drwxr-xr-x 1 root    root      260 Oct  6 12:05 ..
+drwxr-xr-x 4 root    root     4096 Oct  7 14:46 boot
+drwx------ 3 xubuntu xubuntu  4096 Oct  7 14:09 home
+drwx------ 2 root    root    16384 Oct  7 14:09 lost+found
+
+/mnt/boot:
+total 28
+drwxr-xr-x 4 root    root     4096 Oct  7 14:46 .
+drwx------ 5 xubuntu xubuntu  4096 Oct  7 14:46 ..
+drwxr-xr-x 2 root    root     4096 Jan  1  1970 efi
+drwx------ 2 root    root    16384 Oct  7 14:08 lost+found
+
+/mnt/boot/efi:
+total 8
+drwxr-xr-x 2 root root 4096 Jan  1  1970 .
+drwxr-xr-x 4 root root 4096 Oct  7 14:46 ..
+
+/mnt/home:
+total 24
+drwx------ 3 xubuntu xubuntu  4096 Oct  7 14:09 .
+drwx------ 5 xubuntu xubuntu  4096 Oct  7 14:46 ..
+drwx------ 2 root    root    16384 Oct  7 14:09 lost+found
+xubuntu@xubuntu:~$ 
+
+
+GPT-6 Luna:
+<!--  -->
+结果确认了两个关键点：Curtin 24.0.0 的代码里确实有 `fsimage-layered` 分支；但 `block-meta --help` 显示它只支持 `custom`、`simple`、`simple-boot` 等分区布局模式，不适合拿来推断如何保留你现有的分区和 LUKS。**不要运行 `block-meta` 的实际模式。**
+
+下一步仍只读：查看 Curtin 对 layered source 的具体解析方式，以及 ISO 文件实际包含哪些层。请运行：
+
+```bash
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+
+printf '%s\n' '=== extract.py 中 fsimage-layered 处理逻辑 ==='
+sed -n '150,250p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py"
+
+printf '%s\n' '=== extract 命令的 source 参数和调用位置 ==='
+grep -n -E 'def extract|source|extract_root_tgt|fsimage' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py" | head -n 100
+
+printf '%s\n' '=== ISO squashfs 类型与元数据 ==='
+for f in /cdrom/casper/minimal.squashfs \
+         /cdrom/casper/minimal.standard.squashfs \
+         /cdrom/casper/minimal.standard.live.squashfs; do
+  [ -e "$f" ] || continue
+  echo "--- $f"
+  file "$f"
+  unsquashfs -s "$f"
+done
+
+printf '%s\n' '=== Curtin 对 fsimage-layered 的通用说明/校验 ==='
+sed -n '1070,1110p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/util.py"
+```
+
+把输出贴回来。接下来我会根据代码确认 source URI 和层的选择规则，再检查 Curtin 如何处理已存在的挂载与 `preserve`。目前的信息还不足以生成可安全审阅的完整 YAML；在配置审阅并确认前，不要执行安装或写盘命令。
+
+--------------------
+
+第 5 则用户提示（共 8 则） - 2026/10/8 01:24:21:
+xubuntu@xubuntu:~$ SNAP=/snap/ubuntu-desktop-bootstrap/current
+
+printf '%s\n' '=== extract.py 中 fsimage-layered 处理逻辑 ==='
+sed -n '150,250p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py"
+
+printf '%s\n' '=== extract 命令的 source 参数和调用位置 ==='
+grep -n -E 'def extract|source|extract_root_tgt|fsimage' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py" | head -n 100
+
+printf '%s\n' '=== ISO squashfs 类型与元数据 ==='
+for f in /cdrom/casper/minimal.squashfs \
+         /cdrom/casper/minimal.standard.squashfs \
+         /cdrom/casper/minimal.standard.live.squashfs; do
+  [ -e "$f" ] || continue
+  echo "--- $f"
+  file "$f"
+  unsquashfs -s "$f"
+done
+
+printf '%s\n' '=== Curtin 对 fsimage-layered 的通用说明/校验 ==='
+sed -n '1070,1110p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/util.py"
+=== extract.py 中 fsimage-layered 处理逻辑 ===
+        self._mounts = []
+        if self._tmpdir is not None:
+            shutil.rmtree(self._tmpdir)
+        self._tmpdir = None
+
+
+class TrivialSourceHandler(AbstractSourceHandler):
+
+    def __init__(self, path):
+        self.path = path
+
+    def setup(self):
+        LOG.debug(f"Setting up Trivial Source for stack {self.path}")
+        return self.path
+
+    def cleanup(self):
+        pass
+
+
+def _get_image_stack(uri):
+    '''Find a list of dependent images for given layered fsimage path
+
+    uri: URI of the layer file
+    return: tuple of path to dependent images
+    '''
+
+    image_stack = []
+    img_name = os.path.basename(uri)
+    root_dir = uri[:-len(img_name)]
+    img_base, img_ext = os.path.splitext(img_name)
+
+    if not img_base:
+        return []
+
+    img_parts = img_base.split('.')
+    for i in range(len(img_parts)):
+        image_stack.append(
+            root_dir + '.'.join(img_parts[0:i+1]) + img_ext)
+
+    return image_stack
+
+
+def get_handler_for_source(source):
+    """Return an AbstractSourceHandler for setting up `source`."""
+    if source['uri'].startswith("cp://"):
+        return TrivialSourceHandler(source['uri'][5:])
+    elif source['type'] == "fsimage":
+        return LayeredSourceHandler([source['uri']])
+    elif source['type'] == "fsimage-layered":
+        return LayeredSourceHandler(_get_image_stack(source['uri']))
+    else:
+        return None
+
+
+def extract_source(source, target, *, extra_rsync_args=None):
+    handler = get_handler_for_source(source)
+    if handler is not None:
+        root_dir = handler.setup()
+        try:
+            copy_to_target(root_dir, target, extra_rsync_args=extra_rsync_args)
+        finally:
+            handler.cleanup()
+    else:
+        extract_root_tgz_url(source['uri'], target=target)
+
+
+def copy_to_target(source, target, *, extra_rsync_args=None):
+    if extra_rsync_args is None:
+        extra_rsync_args = []
+    if source.startswith("cp://"):
+        source = source[5:]
+    source = os.path.abspath(source)
+
+    os.makedirs(target, exist_ok=True)
+
+    util.subp(
+        ['rsync', '-aXHAS', '--one-file-system'] +
+        extra_rsync_args +
+        [source + '/', '.'],
+        cwd=target)
+
+
+def _path_from_file_url(url):
+    return url[7:] if url.startswith("file://") else url
+
+
+def extract(args):
+    if not args.target:
+        raise ValueError("Target must be defined or set in environment")
+
+    state = util.load_command_environment()
+    cfg = curtin.config.load_command_config(args, state)
+
+    sources = args.sources
+    target = args.target
+    if not sources:
+        if not cfg.get('sources'):
+            raise ValueError("'sources' must be on cmdline or in config")
+        sources = cfg.get('sources')
+
+    if isinstance(sources, dict):
+=== extract 命令的 source 参数和调用位置 ===
+27:     (('sources',),
+28:      {'help': 'the sources to install [default read from CONFIG]',
+49:def extract_root_tgz_url(url, target):
+79:    """Encapsulate setting up an installation source for copy_to_target.
+81:    A source hander sets up a curtin installation source (see
+82:    https://curtin.readthedocs.io/en/latest/topics/config.html#sources)
+88:        """Set up the source for copying and return the path to it."""
+124:                        ("Failed to use fsimage: '%s' doesn't exist " +
+170:    '''Find a list of dependent images for given layered fsimage path
+192:def get_handler_for_source(source):
+193:    """Return an AbstractSourceHandler for setting up `source`."""
+194:    if source['uri'].startswith("cp://"):
+195:        return TrivialSourceHandler(source['uri'][5:])
+196:    elif source['type'] == "fsimage":
+197:        return LayeredSourceHandler([source['uri']])
+198:    elif source['type'] == "fsimage-layered":
+199:        return LayeredSourceHandler(_get_image_stack(source['uri']))
+204:def extract_source(source, target, *, extra_rsync_args=None):
+205:    handler = get_handler_for_source(source)
+213:        extract_root_tgz_url(source['uri'], target=target)
+216:def copy_to_target(source, target, *, extra_rsync_args=None):
+219:    if source.startswith("cp://"):
+220:        source = source[5:]
+221:    source = os.path.abspath(source)
+228:        [source + '/', '.'],
+236:def extract(args):
+243:    sources = args.sources
+245:    if not sources:
+246:        if not cfg.get('sources'):
+247:            raise ValueError("'sources' must be on cmdline or in config")
+248:        sources = cfg.get('sources')
+250:    if isinstance(sources, dict):
+251:        sources = [sources[k] for k in sorted(sources.keys())]
+253:    sources = [util.sanitize_source(s) for s in sources]
+255:    LOG.debug("Installing sources: %s to target at %s" % (sources, target))
+258:    for source in sources:
+262:                source['uri']):
+263:            if source['type'].startswith('dd-'):
+267:            extract_source(source, target, extra_rsync_args=extra_rsync_args)
+=== ISO squashfs 类型与元数据 ===
+--- /cdrom/casper/minimal.squashfs
+/cdrom/casper/minimal.squashfs: Squashfs filesystem, little endian, version 4.0, xz compressed, 685113433 bytes, 80879 inodes, blocksize: 131072 bytes, created: Tue Sep  8 10:55:55 2026
+Found a valid SQUASHFS 4:0 superblock on /cdrom/casper/minimal.squashfs.
+Creation or last append time Tue Sep  8 10:55:55 2026
+Filesystem size 685113433 bytes (669056.09 Kbytes / 653.38 Mbytes)
+Compression xz
+Block size 131072
+Filesystem is exportable via NFS
+Inodes are compressed
+Data is compressed
+Uids/Gids (Id table) are compressed
+Fragments are compressed
+Always-use-fragments option is not specified
+Xattrs are compressed
+Duplicates are removed
+Number of fragments 3633
+Number of inodes 80879
+Number of ids 30
+Number of xattr ids 3
+--- /cdrom/casper/minimal.standard.squashfs
+/cdrom/casper/minimal.standard.squashfs: Squashfs filesystem, little endian, version 4.0, xz compressed, 2078434457 bytes, 59498 inodes, blocksize: 131072 bytes, created: Tue Sep  8 10:58:02 2026
+Found a valid SQUASHFS 4:0 superblock on /cdrom/casper/minimal.standard.squashfs.
+Creation or last append time Tue Sep  8 10:58:02 2026
+Filesystem size 2078434457 bytes (2029721.15 Kbytes / 1982.15 Mbytes)
+Compression xz
+Block size 131072
+Filesystem is exportable via NFS
+Inodes are compressed
+Data is compressed
+Uids/Gids (Id table) are compressed
+Fragments are compressed
+Always-use-fragments option is not specified
+Xattrs are compressed
+Duplicates are removed
+Number of fragments 2964
+Number of inodes 59498
+Number of ids 10
+Number of xattr ids 753
+--- /cdrom/casper/minimal.standard.live.squashfs
+/cdrom/casper/minimal.standard.live.squashfs: Squashfs filesystem, little endian, version 4.0, xz compressed, 1240583952 bytes, 60556 inodes, blocksize: 131072 bytes, created: Tue Sep  8 10:59:31 2026
+Found a valid SQUASHFS 4:0 superblock on /cdrom/casper/minimal.standard.live.squashfs.
+Creation or last append time Tue Sep  8 10:59:31 2026
+Filesystem size 1240583952 bytes (1211507.77 Kbytes / 1183.11 Mbytes)
+Compression xz
+Block size 131072
+Filesystem is exportable via NFS
+Inodes are compressed
+Data is compressed
+Uids/Gids (Id table) are compressed
+Fragments are compressed
+Always-use-fragments option is not specified
+Xattrs are compressed
+Duplicates are removed
+Number of fragments 3032
+Number of inodes 60556
+Number of ids 4
+Number of xattr ids 195
+=== Curtin 对 fsimage-layered 的通用说明/校验 ===
+
+def run_hook_if_exists(target, hook):
+    """
+    Look for "hook" in "target" and run it
+    """
+    target_hook = paths.target_path(target, '/curtin/' + hook)
+    if os.path.isfile(target_hook):
+        LOG.debug("running %s" % target_hook)
+        subp([target_hook])
+        return True
+    return False
+
+
+def sanitize_source(source):
+    """
+    Check the install source for type information
+    If no type information is present or it is an invalid
+    type, we default to the standard tgz format
+    """
+    if type(source) is dict:
+        # already sanitized?
+        return source
+    supported = ['tgz', 'dd-tgz', 'tbz', 'dd-tbz', 'txz', 'dd-txz', 'dd-tar',
+                 'dd-bz2', 'dd-gz', 'dd-xz', 'dd-raw', 'fsimage',
+                 'fsimage-layered']
+    deftype = 'tgz'
+    for i in supported:
+        prefix = i + ":"
+        if source.startswith(prefix):
+            return {'type': i, 'uri': source[len(prefix):]}
+
+    # translate squashfs: to fsimage type.
+    if source.startswith("squashfs://"):
+        return {'type': 'fsimage', 'uri': source[len("squashfs://"):]}
+
+    elif source.startswith("squashfs:"):
+        LOG.warning("The squashfs: prefix is deprecated and"
+                    "will be removed in a future release."
+                    "Please use squashfs:// instead.")
+        return {'type': 'fsimage', 'uri': source[len("squashfs:"):]}
+
+xubuntu@xubuntu:~$ 
+
+
+GPT-6 Luna:
+<!-- **Analyzing source behavior**
+
+I need to respond and analyze the source behavior. The `_get_image_stack` function splits the basename based on periods, allowing URIs like `/cdrom/casper/minimal.standard.squashfs` to yield relevant outputs. I validated the source chain and considered different manifest rows for incremental updates, but the source registration appears to use the default full setting.
+
+The user suggested checking the LayeredSourceHandler setup, which could reveal important details about the overlay ordering and files. I should also inspect the utility functions and consider executing `_get_image_stack` safely using Python.**Identifying source URI**
+
+I can identify the source URI candidate from the code `/cdrom/casper/minimal.standard.squashfs`, and it has a prefix of `fsimage-layered:`. However, I can't configure it yet because no source key semantics seem to be accepted. I can't cite any web sources since it's based on local output. I'm planning to provide commands for inspection next. 
+
+It's peculiar that the system date is set to October 7, 2026; I need to identify the creation dates for all valid files, and I'll also mention three files in the chain while inspecting the handler. -->
+这段实现已经能确认层选择规则：Curtin 会根据 URI 的文件名，把点分隔的前缀逐层组成镜像栈。因此，URI 指向 `minimal.standard.squashfs` 时，它会尝试依次使用：
+
+- `/cdrom/casper/minimal.squashfs`
+- `/cdrom/casper/minimal.standard.squashfs`
+
+这与 ISO 声明的默认完整 Xubuntu Desktop 源相符。`minimal.standard.live.squashfs` 会构成另一条三层链；目前没有理由把它当成安装源。**这只是代码路径推断，还需看 `LayeredSourceHandler` 如何挂载和合并这些层；现在还不生成或运行安装配置。**
+
+请继续只读检查处理器实现和源配置解析：
+
+```bash
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+
+printf '%s\n' '=== LayeredSourceHandler 的挂载、层顺序与清理逻辑 ==='
+sed -n '70,170p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py"
+
+printf '%s\n' '=== ISO 默认源对应的文件是否都存在 ==='
+for f in \
+  /cdrom/casper/minimal.squashfs \
+  /cdrom/casper/minimal.standard.squashfs; do
+  if [ -r "$f" ]; then
+    printf '可读：%s\n' "$f"
+  else
+    printf '缺失或不可读：%s\n' "$f"
+  fi
+done
+
+printf '%s\n' '=== Curtin storage preserve 字段定义位置 ==='
+grep -R -n --include='*.py' \
+  -E 'preserve|mount' \
+  "$SNAP/lib/python3.10/site-packages/curtin/block" \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/block_meta.py" \
+  2>/dev/null | head -n 100
+```
+
+另一个重要结论：当前挂载树显示 EFI、`/boot`、根文件系统和 `/home` 都已挂载为可写；所以后续即使某条命令看起来像“只提取文件”，也必须先弄清它会不会覆盖目标中的现有内容。下一步先核对 Curtin 的分层挂载实现和 storage 的保留行为，再讨论完整 YAML。
+
+--------------------
+
+第 6 则用户提示（共 8 则） - 2026/10/8 01:26:34:
+xubuntu@xubuntu:~$ SNAP=/snap/ubuntu-desktop-bootstrap/current
+
+printf '%s\n' '=== LayeredSourceHandler 的挂载、层顺序与清理逻辑 ==='
+sed -n '70,170p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/extract.py"
+
+printf '%s\n' '=== ISO 默认源对应的文件是否都存在 ==='
+for f in \
+  /cdrom/casper/minimal.squashfs \
+  /cdrom/casper/minimal.standard.squashfs; do
+  if [ -r "$f" ]; then
+    printf '可读：%s\n' "$f"
+  else
+    printf '缺失或不可读：%s\n' "$f"
+  fi
+done
+
+printf '%s\n' '=== Curtin storage preserve 字段定义位置 ==='
+grep -R -n --include='*.py' \
+  -E 'preserve|mount' \
+  "$SNAP/lib/python3.10/site-packages/curtin/block" \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands/block_meta.py" \
+  2>/dev/null | head -n 100
+=== LayeredSourceHandler 的挂载、层顺序与清理逻辑 ===
+        opts.extend(['-t', type])
+    util.subp(['mount'] + opts + [device, mountpoint], capture=True)
+
+
+def unmount(mountpoint):
+    util.subp(['umount', mountpoint], capture=True)
+
+
+class AbstractSourceHandler(ABC):
+    """Encapsulate setting up an installation source for copy_to_target.
+
+    A source hander sets up a curtin installation source (see
+    https://curtin.readthedocs.io/en/latest/topics/config.html#sources)
+    for copying to the target with copy_to_target.
+    """
+
+    @abc.abstractmethod
+    def setup(self):
+        """Set up the source for copying and return the path to it."""
+        pass
+
+    @abc.abstractmethod
+    def cleanup(self):
+        """Perform any necessary clean up of actions performed by setup."""
+        pass
+
+
+class LayeredSourceHandler(AbstractSourceHandler):
+
+    def __init__(self, image_stack):
+        self.image_stack = image_stack
+        self._tmpdir = None
+        self._mounts = []
+
+    def _download(self):
+        new_image_stack = []
+        for path in self.image_stack:
+            if url_helper.urlparse(path).scheme not in ["", "file"]:
+                new_path = os.path.join(self._tmpdir, os.path.basename(path))
+                url_helper.download(path, new_path, retries=3)
+            else:
+                new_path = _path_from_file_url(path)
+            new_image_stack.append(new_path)
+        self.image_stack = new_image_stack
+
+    def setup(self):
+        self._tmpdir = tempfile.mkdtemp()
+        LOG.debug(f"Setting up Layered Source for stack {self.image_stack}")
+        try:
+            self._download()
+            # Check that all images exists on disk and are not empty
+            for img in self.image_stack:
+                if not os.path.isfile(img) or os.path.getsize(img) <= 0:
+                    raise ValueError(
+                        ("Failed to use fsimage: '%s' doesn't exist " +
+                         "or is invalid") % (img,))
+            for img in self.image_stack:
+                mp = os.path.join(
+                    self._tmpdir, os.path.basename(img) + ".dir")
+                os.mkdir(mp)
+                mount(img, mp, options='loop,ro')
+                self._mounts.append(mp)
+            if len(self._mounts) == 1:
+                root_dir = self._mounts[0]
+            else:
+                # Multiple image files, merge them with an overlay.
+                root_dir = os.path.join(self._tmpdir, "root.dir")
+                os.mkdir(root_dir)
+                mount(
+                    'overlay', root_dir, type='overlay',
+                    options='lowerdir=' + ':'.join(reversed(self._mounts)))
+                self._mounts.append(root_dir)
+            return root_dir
+        except Exception:
+            self.cleanup()
+            raise
+
+    def cleanup(self):
+        for mount in reversed(self._mounts):
+            unmount(mount)
+        self._mounts = []
+        if self._tmpdir is not None:
+            shutil.rmtree(self._tmpdir)
+        self._tmpdir = None
+
+
+class TrivialSourceHandler(AbstractSourceHandler):
+
+    def __init__(self, path):
+        self.path = path
+
+    def setup(self):
+        LOG.debug(f"Setting up Trivial Source for stack {self.path}")
+        return self.path
+
+    def cleanup(self):
+        pass
+
+
+def _get_image_stack(uri):
+    '''Find a list of dependent images for given layered fsimage path
+=== ISO 默认源对应的文件是否都存在 ===
+可读：/cdrom/casper/minimal.squashfs
+可读：/cdrom/casper/minimal.standard.squashfs
+=== Curtin storage preserve 字段定义位置 ===
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:351:    These are devices that do not have anything mounted on them.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:361:        mountpoints = [x for x in cur if cur[x].get('MOUNTPOINT')]
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:362:        if len(mountpoints) == 0:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:367:def get_devices_for_mp(mountpoint):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:369:    return a list of devices (full paths) used by the provided mountpoint
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:374:        if data['MOUNTPOINT'] == mountpoint:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:380:    # for some reason, on some systems, lsblk does not list mountpoint
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:381:    # for devices that are mounted.  This happens on /dev/vdc1 during a run
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:383:    mountpoint = [os.path.realpath(dev)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:385:                  get_proc_mounts() if mp == mountpoint]
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:387:    return mountpoint
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:504:    run 'blockdev --rereadpt' for all block devices not currently mounted
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:618:def detect_multipath(target_mountpoint=None) -> Optional[str]:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:622:                       in get_proc_mounts() if dev.startswith('/dev/')):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:624:                # A tmpfs can be mounted with any old junk in the "device"
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:686:    tmp_mount = tempfile.mkdtemp()
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:691:            util.do_mount(dev_path, tmp_mount)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:692:            mp = tmp_mount
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:694:                fullpath = os.path.join(tmp_mount, path)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:704:                util.do_umount(mp)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:706:    os.rmdir(tmp_mount)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:773:def get_mountpoints():
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:775:    Returns a list of all mountpoints where filesystems are currently mounted.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:778:    proc_mounts = [mp for (dev, mp, vfs, opts, freq, passno) in
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:779:                   get_proc_mounts()]
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:780:    lsblock_mounts = list(i.get("MOUNTPOINT") for name, i in info.items() if
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:784:    return list(set(proc_mounts + lsblock_mounts))
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:787:def get_proc_mounts():
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:789:    Returns a list of tuples for each entry in /proc/mounts
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:791:    mounts = []
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:792:    with open("/proc/mounts", "r") as fp:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:797:                mounts.append((dev, mp, vfs, opts, freq, passno))
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:800:    return mounts
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:1137:        mount_points = util.list_device_mounts(path)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:1138:        LOG.error('Device mounts: %s', mount_points)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/__init__.py:1139:        fusers = util.fuser_mount(path)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/clear_holders.py:70:    # amounts of data to a backing device.  The strategy here
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/clear_holders.py:603:def clear_holders(base_paths, try_preserve=False):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/clear_holders.py:629:        if try_preserve and shutdown_function in DATA_DESTROYING_HANDLERS:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/clear_holders.py:631:                     'attempting to preserve data, so skipping' %
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/clear_holders.py:716:# handlers that should not be run if an attempt is being made to preserve data
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/dasd.py:371:        :param force: boolean set True to skip checking if mounted,
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:19:    'preserve': {'type': 'boolean'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:64:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:86:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:124:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:169:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:185:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:198:            'properties': {'preserve': {'enum': [True]}},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:199:            'required': ['preserve']  # this looks redundant but isn't
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:215:        'preserve': {'type': 'boolean'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:235:        'preserve': {'type': 'boolean'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:243:    'title': 'curtin storage configuration for mounts',
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:244:    'description': ('Declarative syntax for specifying devices mounts.'),
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:255:        'type': {'const': 'mount'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:314:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:359:        'preserve': {'$ref': '#/definitions/preserve'},
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/schemas.py:413:        'mountpoint': {
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:27:    'canmount': 'off',
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:79:            # mounting before the ext4 is no help
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:80:            "canmount": "off",
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:122:            # format as ext4, mount it, move the previously-generated systemkey
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:129:            es.enter_context(util.mount(dmpath, keystore_root))
+两次提交，第一部分
+
+GPT-6 Luna:
+<!--  -->
+收到，这部分输出确认了默认完整桌面镜像的层顺序：Curtin 会把两个 squashfs 以只读方式挂载，并用 overlay 合并；`minimal.standard.squashfs` 在合并时优先于 `minimal.squashfs`。两个文件都存在。若 source URI 指向本地 ISO 文件，代码会按本地路径处理，不走下载分支。
+
+**还不能据此认定整个安装流程安全**：storage 的 `preserve` 行为尚未核实，尤其你的 LUKS 容器已解锁、文件系统已挂载。下一步只读查看存储 Schema 和实现位置：
+
+```bash
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+
+printf '%s\n' '=== Curtin mount / dm_crypt / partition / format Schema ==='
+sed -n '200,275p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/block/schemas.py"
+sed -n '275,380p' \
+  "$SNAP/lib/python3.10/site-packages/curtin/block/schemas.py"
+
+printf '%s\n' '=== Curtin block storage 实现文件 ==='
+find "$SNAP/lib/python3.10/site-packages/curtin" \
+  -maxdepth 3 -type f \
+  \( -iname '*block*meta*' -o -iname '*storage*' -o -iname '*crypt*' \) \
+  -print
+
+printf '%s\n' '=== preserve 与 dm_crypt 的实际处理位置 ==='
+grep -R -n --include='*.py' \
+  -E 'preserve|dm_crypt|cryptsetup|mount.*preserv|preserv.*mount' \
+  "$SNAP/lib/python3.10/site-packages/curtin/commands" \
+  "$SNAP/lib/python3.10/site-packages/curtin/block" \
+  2>/dev/null | head -n 160
+```
+
+贴回结果后，再判断能否用 Curtin 描述现有分区与已解锁映射而不重建它们；在这一步完成前仍不要运行任何写盘、格式化或安装命令。
+
+--------------------
+
+第 7 则用户提示（共 8 则） - 2026/10/8 01:27:48:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:227:                 mountpoint=None, altroot=None,
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:256:                    password in order to mount the disk.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:288:    if mountpoint:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:289:        options.extend(_join_flags('-O', {'mountpoint': mountpoint}))
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:343:    # mount volume if it canmount=noauto
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:344:    if zfs_cfg.get('canmount') == 'noauto':
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:345:        zfs_mount(poolname, volume)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:348:def zfs_mount(poolname, volume):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:358:                                    invoking `zfs mount`.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/block/zfs.py:367:    cmd = ['zfs', 'mount', _join_pool_volume(poolname, volume)]
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:83:     ('--umount', {'help': 'unmount any mounted filesystems before exit',
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:671:    preserve: bool = False
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:684:    if image.preserve:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:709:        if os.path.exists(path) and not image.preserve:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:751:        if config.value_as_boolean(info.get('preserve')):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:754:                "preserve is set to true.  The dasd needs formatting"
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:777:    # For disks, 'preserve' is what indicates whether the partition
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:784:        preserve_ptable = config.value_as_boolean(info.get('preserve'))
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:786:        preserve_ptable = config.value_as_boolean(info.get('preserve')) \
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:788:    if preserve_ptable:
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:789:        # Handle preserve flag, verifying if ptable specified in config
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:796:                    "cannot be read, but preserve is set to true (or wipe is "
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:799:        LOG.info("disk '%s' marked to be preserved, so keeping partition "
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1102:    # Handle preserve flag
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1104:    if config.value_as_boolean(info.get('preserve')):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1214:    # Handle preserve flag
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1215:    if config.value_as_boolean(info.get('preserve')):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1216:        # Volume marked to be preserved, not formatting
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1232:def mount_data(info, storage_config):
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1233:    """Return information necessary for a mount or fstab entry.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1235:    :param info: a 'mount' type from storage config.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1239:    if info.get('type') != "mount":
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1240:        raise ValueError("entry is not type 'mount' (%s)" % info)
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1248:    # turn empty options into "defaults", which works in fstab and mount -o.
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1260:                "mount entry without 'device' missing: %s. (%s)" %
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1266:                "mount entry refers to non-existant device %s: (%s)" %
+/snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py:1415:def mount_fstab_data(fdata, target=None):
+xubuntu@xubuntu:~$ 
+
+第二部分
+
+GPT-6 Luna:
+<!--  -->
+收到，这是第二部分的 `grep` 结果。它定位到了 Curtin 24.0.0 中实际处理分区、格式化和 `mount_data()` 的代码，但还没有显示这些函数的实现；此前要求查看的 Schema 片段也没有出现在这次输出里。因此现在还不能判断 `preserve` 对已解锁 LUKS 和现有文件系统是否安全。
+
+请只读查看以下代码片段：
+
+```bash
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+FILE="$SNAP/lib/python3.10/site-packages/curtin/commands/block_meta.py"
+
+printf '%s\n' '=== 分区 preserve 处理 ==='
+sed -n '770,820p' "$FILE"
+
+printf '%s\n' '=== 分区创建/保留处理 ==='
+sed -n '1080,1135p' "$FILE"
+
+printf '%s\n' '=== format preserve 处理 ==='
+sed -n '1190,1232p' "$FILE"
+
+printf '%s\n' '=== mount_data 实现 ==='
+sed -n '1232,1285p' "$FILE"
+
+printf '%s\n' '=== mount / dm_crypt / partition / format Schema ==='
+SCHEMA="$SNAP/lib/python3.10/site-packages/curtin/block/schemas.py"
+sed -n '200,275p' "$SCHEMA"
+```
+
+这些 `sed` 命令只读取代码，不会操作磁盘。拿到实现后，我再判断是否能以保留现有分区、文件系统和 LUKS 容器的方式编写配置。
+
+--------------------
+
+第 8 则用户提示（共 8 则） - 2026/10/8 01:29:39:
+马上又要达到对话上限了，请帮我输出一段简短的描述内容，以保证不丢失当前内容的情况下开始新对话，谢谢
+
+GPT-6 Luna:
+<!--  -->
+请在新对话粘贴以下内容：
+
+```text
+继续指导我在 Xubuntu 24.04 Live 中手动使用 Curtin 安装。必须先只读检查；完整配置审阅并由我确认之前，不要让我运行写盘、格式化、分区、安装命令。不要向我索要或接收 LUKS 密码。
+
+环境：
+- ISO 挂载于 /cdrom，设备 /dev/sr0。
+- Curtin 来自 snap：/snap/ubuntu-desktop-bootstrap/current；版本 24.0.0-41-g8bc0121d6。
+- 可用调用环境：
+  SNAP=/snap/ubuntu-desktop-bootstrap/current
+  PYTHON="$SNAP/usr/bin/python3.10"
+  PYTHONPATH="$SNAP/lib/python3.10/site-packages:$SNAP/usr/lib/python3/dist-packages"
+  PYTHON="$PYTHON" PYTHONPATH="$PYTHONPATH" "$SNAP/bin/curtin" ...
+- 目标盘 /dev/vda 100G：
+  vda1 EFI vfat UUID 2539-FD45，已挂载 /mnt/boot/efi
+  vda2 /boot ext4 UUID 0e582ecf-0ed5-4bef-a274-3e3cea4ffbb3，已挂载 /mnt/boot
+  vda3 LUKS2 UUID 7ddf4b9b-b186-4be9-8716-69a8154f4fef，已解锁为 /dev/mapper/luks-7ddf4b9b-b186-4be9-8716-69a8154f4fef；内部 ext4 UUID dabb0440-9f2e-4720-9d61-aeedcd6f8f8f，挂载 /mnt
+  vda4 LUKS2 UUID 660dcc3c-ce87-41b8-9d86-209511f2ece5，已解锁为 /dev/mapper/luks-660dcc3c-ce87-41b8-9d86-209511f2ece5；内部 ext4 UUID 00f507ed-940d-43f3-85c8-2b020e8d9a06，挂载 /mnt/home
+  当前挂载均 rw，目标基本为空，/mnt/etc 不存在。
+- 用户要安装完整 Xubuntu Desktop，用户名 user、主机名 user-xubuntu、locale zh_CN.UTF-8、时区 America/New_York、不自动登录。用户希望安装后本地交互设密码；密码不进聊天。
+- ISO 的 /cdrom/casper/install-sources.yaml 声明默认完整桌面源 minimal.standard.squashfs，type fsimage-layered；依赖 minimal.squashfs。两个文件都存在。Curtin extract.py 的 _get_image_stack 会按文件名点分层；LayeredSourceHandler 以只读方式挂载并 overlay 合并，层顺序反转后标准层优先。设本地 URI 时走本地文件路径，不下载。minimal.standard.live.squashfs 不在安装源声明中，不应自行选用。
+- `curtin block-meta --help` 只列 custom/simple/simple-boot；不能据此运行 block-meta。
+- grep 找到 /snap/ubuntu-desktop-bootstrap/current/lib/python3.10/site-packages/curtin/commands/block_meta.py 中：
+  partition preserve 约 777-799 行；partition 操作约 1102 行；format preserve 1214-1216 行；`mount_data(info, storage_config)` 从 1232 行开始。
+- 之前要求查看这些实现及 schemas.py 200-275 行，但还没收到输出。
+
+下一步仅运行/审阅这些只读命令，不能执行安装或磁盘操作：
+SNAP=/snap/ubuntu-desktop-bootstrap/current
+FILE="$SNAP/lib/python3.10/site-packages/curtin/commands/block_meta.py"
+sed -n '770,820p' "$FILE"
+sed -n '1080,1135p' "$FILE"
+sed -n '1190,1232p' "$FILE"
+sed -n '1232,1285p' "$FILE"
+SCHEMA="$SNAP/lib/python3.10/site-packages/curtin/block/schemas.py"
+sed -n '200,275p' "$SCHEMA"
+
+根据输出判断现有分区、已解锁 LUKS、文件系统的 preserve 和 mount 行为。确认安全后先提供完整 YAML 供审阅，仍不得在我确认前给出或要求运行写盘/格式化/安装命令。
+```
